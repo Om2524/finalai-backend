@@ -126,8 +126,9 @@ class ManimRenderer:
         """Execute manim command"""
         cmd = [
             "manim",
-            f"-p{MANIM_QUALITY}",  # -pql for preview quality low
+            f"-{MANIM_QUALITY}",  # Remove 'p' flag - quality only, no preview
             "--format", "mp4",
+            "--disable_caching",  # Disable caching for cleaner execution
             "--media_dir", str(output_dir),
             str(code_file),
             scene_class  # Dynamic class name
