@@ -28,9 +28,9 @@ TEMP_CODE_PATH.mkdir(exist_ok=True)
 MAX_IMAGE_SIZE_MB = int(os.getenv("MAX_IMAGE_SIZE_MB", 10))
 MAX_IMAGE_SIZE_BYTES = MAX_IMAGE_SIZE_MB * 1024 * 1024
 
-# Manim Configuration
-MANIM_QUALITY = os.getenv("MANIM_QUALITY", "ql")  # ql = low quality, faster
-MANIM_TIMEOUT = 300  # seconds (5 minutes - increased for Free tier compatibility)
+# Manim Configuration - Optimized for Starter Tier
+MANIM_QUALITY = os.getenv("MANIM_QUALITY", "qh")  # qh = high quality (1080p60fps) for Starter tier
+MANIM_TIMEOUT = int(os.getenv("MANIM_TIMEOUT", 180))  # 3 minutes - Starter CPU is 2x faster
 
 # Validate required settings
 if not GEMINI_API_KEY:
