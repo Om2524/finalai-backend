@@ -1,5 +1,6 @@
 # Use the official Manim image (comes with Python, FFmpeg, LaTeX pre-installed)
-FROM manimcommunity/manim:v0.18.0
+# v0.19.0 includes Python 3.9+ with support for modern type hints
+FROM manimcommunity/manim:v0.19.0
 
 # Switch to root to install dependencies and configure permissions
 USER root
