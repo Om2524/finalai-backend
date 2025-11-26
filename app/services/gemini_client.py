@@ -1321,6 +1321,23 @@ REMEMBER: First character = 'f', First line = "from manim import *"
         if 'self.play' in code or 'self.wait' in code:
             code = re.sub(r'^\s*pass\s*$', '', code, flags=re.MULTILINE)
         
+        # CRITICAL FIX: Replace unsafe nuclear clear with safe version
+        # self.play(*[FadeOut(mob) for mob in self.mobjects]) will crash if screen is empty
+        # Replace with a safe version that checks for empty mobjects
+        unsafe_nuclear_clear = r'self\.play\s*\(\s*\*\s*\[\s*FadeOut\s*\(\s*mob\s*\)\s*for\s+mob\s+in\s+self\.mobjects\s*\]\s*\)'
+        safe_nuclear_clear = 'self.play(*[FadeOut(mob) for mob in self.mobjects]) if self.mobjects else None'
+        
+        # But actually, the safest is to just use a helper check:
+        # Better approach: wrap in conditional
+        if re.search(unsafe_nuclear_clear, code):
+            logger.warning("Fixing unsafe nuclear clear - adding mobjects check")
+            # Replace with if-guarded version
+            code = re.sub(
+                unsafe_nuclear_clear,
+                'self.play(*[FadeOut(mob) for mob in self.mobjects]) if self.mobjects else self.wait(0.1)',
+                code
+            )
+        
         # Fix 5: Clean up excessive whitespace
         code = re.sub(r'\n{3,}', '\n\n', code)
         
