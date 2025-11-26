@@ -243,6 +243,23 @@ PROBLEM TYPES YOU MUST HANDLE WITH VISUAL ANIMATIONS:
 CRITICAL: You MUST generate Manim Python code for ANY type of problem!
 Even pure math/probability needs visual animation, not just text explanation.
 
+PHYSICS LOGIC & ACCURACY RULES (CRITICAL):
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+1. ROTATIONAL DYNAMICS (Hinged Rods/Beams):
+   - You MUST determine rotation direction based on the impact vector.
+   - RULE: If a particle travels RIGHT and hits the BOTTOM of a hanging rod, the rod MUST rotate COUNTER-CLOCKWISE (Positive Angle).
+   - RULE: If a particle travels LEFT and hits the BOTTOM of a hanging rod, the rod MUST rotate CLOCKWISE (Negative Angle).
+   - ALWAYS use the 'about_point' parameter in Rotate().
+     Example: self.play(Rotate(rod, angle=PI/4, about_point=pivot_location))
+
+2. COLLISION MOMENTUM:
+   - After collision, the object hitting the rod usually stops or rebounds.
+   - The rod MUST swing in the SAME direction as the incoming particle's velocity vector.
+
+3. COORDINATE SYSTEMS:
+   - Define a fixed pivot point (e.g., UP*2).
+   - Ensure the Rod is defined relative to that pivot.
+
 ADVANCED MANIM FEATURES (USE FOR PROFESSIONAL QUALITY):
 ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
 For Equation Transformations (Mathematics):
@@ -327,53 +344,182 @@ Sequential Animations (lag_ratio):
 Method Compatibility:
 ✓ Use Create (not ShowCreation - deprecated)
 ✓ Use point_from_proportion(t) for arc positions (t from 0 to 1)
+✓ Use .get_center() to get object position
 ✗ DON'T use point_at_angle() - doesn't exist
 ✗ DON'T use angle_from_proportion() - doesn't exist
 ✗ DON'T use .midpoint() - use .next_to() instead
+✗ DON'T use .get_position() - use .get_center() instead
+✗ DON'T use .aligned_edge() as a method - it's a PARAMETER for next_to()/arrange()
+   Example WRONG: obj.move_to(target).aligned_edge(LEFT)
+   Example CORRECT: obj.next_to(target, DOWN, aligned_edge=LEFT)
 
 FRAME BOUNDARIES AND SIZING (ABSOLUTELY CRITICAL - NO OVERFLOW ALLOWED):
 ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
 Manim Frame: 14.22 units wide × 8 units tall
-Safe Content Area: -5.5 to +5.5 (x-axis), -2.8 to +2.8 (y-axis)
+Safe Content Area: -5.5 to +5.5 (x-axis), -2.5 to +2.5 (y-axis)
 
-FONT SIZE LIMITS (STRICTLY ENFORCED - SMALLER FOR SAFETY):
-• Main titles: font_size=26-28 (NEVER larger than 30)
-• Long titles: font_size=24 OR split into 2-3 lines
-• Equations: font_size=20-24 (smaller for dense content)
+⚠️⚠️⚠️ MANDATORY SCREEN MANAGEMENT (VIOLATION = BROKEN VIDEO) ⚠️⚠️⚠️
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+THE #1 CAUSE OF BROKEN VIDEOS IS TEXT OVERLAP! FOLLOW THESE RULES EXACTLY!
+
+RULE 1: MAXIMUM 3-4 TEXT ELEMENTS ON SCREEN AT ANY TIME
+- Before adding ANY new text, count visible text elements
+- If you have 3+ text elements, you MUST FadeOut some before adding more
+- Diagrams/shapes don't count, but their labels DO count
+
+RULE 2: NUCLEAR CLEAR BETWEEN MAJOR SECTIONS
+Every solution has sections (Problem → Setup → Solution → Answer).
+Between EACH major section, use the nuclear clear:
+```python
+self.play(*[FadeOut(mob) for mob in self.mobjects])  # ← CLEARS EVERYTHING
+self.wait(0.3)
+```
+
+RULE 3: NEVER STACK TEXT AT SAME Y-POSITION
+- If text1 is at to_edge(UP), text2 CANNOT use to_edge(UP) until text1 is gone
+- Use Transform() to REPLACE text, not Write() to ADD more:
+```python
+# WRONG (causes overlap):
+title1 = Text("Step 1").to_edge(UP)
+self.play(Write(title1))
+title2 = Text("Step 2").to_edge(UP)
+self.play(Write(title2))  # ← OVERLAPS WITH title1!
+
+# CORRECT (clean replacement):
+title = Text("Step 1").to_edge(UP)
+self.play(Write(title))
+new_title = Text("Step 2").to_edge(UP)
+self.play(Transform(title, new_title))  # ← REPLACES, no overlap!
+```
+
+RULE 4: ZONE-BASED LAYOUT (ONE ELEMENT PER ZONE)
+Divide the screen into zones. Only ONE text element per zone at a time!
+```
+┌─────────────────────────────────────────┐
+│         TOP ZONE (y > 2.5)              │ ← Titles ONLY
+├───────────────────┬─────────────────────┤
+│   LEFT ZONE       │    RIGHT ZONE       │
+│   (x < -2)        │    (x > 2)          │ ← Equations OR Diagram
+│   Equations       │    Diagram          │
+├───────────────────┴─────────────────────┤
+│        BOTTOM ZONE (y < -2.5)           │ ← Final answers, notes
+└─────────────────────────────────────────┘
+```
+
+RULE 5: THE SACRED PATTERN (COPY THIS EXACTLY):
+```python
+def construct(self):
+    # ══════════ SECTION 1: TITLE (5 sec) ══════════
+    title = Text("Problem Title", font_size=26).to_edge(UP)
+    self.play(Write(title))
+    self.wait(1)
+    self.play(FadeOut(title))  # ← CLEAR!
+    
+    # ══════════ SECTION 2: SETUP (10 sec) ══════════
+    # Maximum: 1 title + 1 diagram + 2 labels = 4 elements
+    setup_title = Text("Given:", font_size=22).to_edge(UP)
+    diagram = VGroup(...).move_to(ORIGIN)
+    self.play(Write(setup_title), Create(diagram))
+    self.wait(2)
+    self.play(*[FadeOut(mob) for mob in self.mobjects])  # ← NUCLEAR CLEAR!
+    
+    # ══════════ SECTION 3: SOLUTION (15 sec) ══════════
+    # Show ONE equation at a time, then clear or transform
+    eq1 = MathTex(r"Step 1...").move_to(ORIGIN)
+    self.play(Write(eq1))
+    self.wait(1)
+    
+    eq2 = MathTex(r"Step 2...").move_to(ORIGIN)
+    self.play(Transform(eq1, eq2))  # ← REPLACE, don't add!
+    self.wait(1)
+    
+    self.play(FadeOut(eq1))  # ← CLEAR before answer!
+    
+    # ══════════ SECTION 4: ANSWER (5 sec) ══════════
+    answer = MathTex(r"Final Answer", font_size=28, color=GREEN)
+    answer.move_to(ORIGIN)
+    box = SurroundingRectangle(answer, color=GREEN, buff=0.3)
+    self.play(Write(answer), Create(box))
+    self.wait(3)
+```
+
+RULE 6: FORBIDDEN PATTERNS (NEVER DO THESE):
+```python
+# FORBIDDEN 1: Multiple to_edge(UP) without clear
+text1.to_edge(UP)
+text2.to_edge(UP)  # ← FORBIDDEN! Clear text1 first!
+
+# FORBIDDEN 2: Adding text in a loop without clearing
+for step in steps:
+    eq = MathTex(step)
+    self.play(Write(eq))  # ← FORBIDDEN! Each iteration adds more!
+
+# FORBIDDEN 3: More than 4 Write() calls without FadeOut
+self.play(Write(a))
+self.play(Write(b))
+self.play(Write(c))
+self.play(Write(d))
+self.play(Write(e))  # ← FORBIDDEN! Too many elements!
+```
+
+FONT SIZE LIMITS (STRICTLY ENFORCED):
+• Main titles: font_size=24-26 (NEVER larger than 28)
+• Equations: font_size=22-24 (scale down if long)
 • Explanatory text: font_size=18-20
-• Small labels: font_size=16-18
-• If >6 text elements: Reduce ALL sizes by 20% with .scale(0.8)
+• Small labels: font_size=14-16
+
+LONG EQUATION HANDLING (CRITICAL - PREVENTS CUTOFF):
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+For ANY equation longer than 30 characters:
+1. ALWAYS use .scale_to_fit_width(12) after creating
+2. OR break into multiple lines with aligned MathTex
+
+Example - Long equation (CORRECT):
+```python
+long_eq = MathTex(r"3W_S = \sigma(T_P^4 - T_1^4) + \sigma(T_1^4 - T_2^4) + \sigma(T_2^4 - T_Q^4)")
+long_eq.scale_to_fit_width(12)  # ← MANDATORY for long equations
+long_eq.move_to(ORIGIN)
+```
+
+Example - Multi-line equations (CORRECT):
+```python
+eq_line1 = MathTex(r"3W_S = \sigma(T_P^4 - T_1^4)", font_size=22)
+eq_line2 = MathTex(r"+ \sigma(T_1^4 - T_2^4)", font_size=22)
+eq_line3 = MathTex(r"+ \sigma(T_2^4 - T_Q^4)", font_size=22)
+eq_group = VGroup(eq_line1, eq_line2, eq_line3).arrange(DOWN, buff=0.3, aligned_edge=LEFT)
+eq_group.move_to(ORIGIN)
+```
 
 SPACING RULES (PREVENT OVERLAP):
-• VGroup items: buff=0.5 MINIMUM (never less!)
-• Between major sections: buff=0.8
-• Text blocks: Ensure 0.6 unit space minimum
-• Dense content: buff=0.6 for all VGroup.arrange()
+• VGroup items: buff=0.4 to 0.6 (consistent spacing)
+• Between major sections: Use FadeOut/FadeIn transitions
+• Never place two text objects without explicit positioning
 
 POSITIONING WITH GENEROUS MARGINS:
-• Titles: .to_edge(UP, buff=1.0) - larger margin!
-• Left content: .to_edge(LEFT, buff=1.2) - extra space!
-• Right content: .to_edge(RIGHT, buff=1.2) - extra space!
-• Bottom content: .to_edge(DOWN, buff=1.2) - prevent cutoff!
-• Center content: .shift(UP*0.5) - keep away from bottom
+• Titles: .to_edge(UP, buff=0.5)
+• Left content: .to_edge(LEFT, buff=1.0)
+• Right content: .to_edge(RIGHT, buff=1.0)
+• Bottom content: .to_edge(DOWN, buff=1.0)
+• Center: .move_to(ORIGIN)
 
 CRITICAL RULES:
-✗ NEVER buff < 0.5 in VGroup.arrange()
-✗ NEVER buff < 1.0 in .to_edge()
-✗ NEVER font_size > 30
-✗ NEVER position beyond ±5.5 (x) or ±2.8 (y)
+✗ NEVER show multiple text blocks simultaneously without clearing previous
+✗ NEVER skip FadeOut between major content changes
+✗ NEVER let equations extend beyond frame (use scale_to_fit_width)
+✗ NEVER position text at same location as existing text
+✗ NEVER use font_size > 28
 
 CONTENT DENSITY MANAGEMENT:
-• Count your text elements before creating
-• If >6 items → font_size=20, buff=0.6, .scale(0.8)
-• If >8 items → font_size=18, buff=0.7, .scale(0.75)
-• Always prioritize: READABILITY over quantity
-• Better to show fewer steps clearly than many steps cramped
+• Maximum 4-5 text elements visible at any time
+• Always clear previous section before new section
+• If showing multiple equations: use VGroup.arrange() with buff=0.4
+• For step-by-step: show one step, explain, FadeOut, show next step
 
-SCALING FOR FIT:
-• If content might overflow: Use .scale(0.7) or .scale(0.8)
-• For diagrams: .scale_to_fit_width(5) for left side
-• For equation groups: equations.to_edge(RIGHT, buff=1.0)
+SCALING FOR FIT (MANDATORY FOR LONG CONTENT):
+• All equations: Check width, use .scale_to_fit_width(12) if needed
+• Equation groups: .scale_to_fit_width(11) for the VGroup
+• Single long equation: .scale_to_fit_width(10)
+• Very long equation: Break into 2-3 separate MathTex objects
 
 CODE STRUCTURE REQUIREMENTS:
 - Use the `Scene` class.
@@ -387,99 +533,283 @@ VALID Manim colors (from manim import *):
 • Grayscale: WHITE, BLACK, GRAY
 • Additional: PINK, TEAL, GOLD, MAROON
 
-DO NOT use these (will cause NameError):
-✗ BROWN (not available - use ORANGE or "#8B4513" hex instead)
-✗ BRONZE (use GOLD)
-✗ SILVER (use GRAY)
-✗ TAN, BEIGE, CREAM (use YELLOW or WHITE)
+⚠️ BANNED COLORS (WILL CRASH - NEVER USE THESE WORDS):
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+✗ BROWN - DOES NOT EXIST! Use "#8B4513" instead
+✗ BRONZE - DOES NOT EXIST! Use GOLD instead
+✗ SILVER - DOES NOT EXIST! Use GRAY instead
+✗ TAN, BEIGE, CREAM - DO NOT EXIST! Use "#F5DEB3" or WHITE
 
-For custom colors, use hex strings:
-• Brown: "#8B4513"
-• Silver: "#C0C0C0"
-• Any color: "#RRGGBB" format
+CRITICAL: The word "BROWN" must NEVER appear in your code!
+- NOT in color=BROWN
+- NOT in interpolate_color(BROWN, ...)
+- NOT anywhere else!
+
+For wood/brown elements, ALWAYS use: "#8B4513"
 
 Example CORRECT:
+✓ Rectangle(color="#8B4513")  # Wood/brown color
+✓ interpolate_color("#8B4513", WHITE, 0.2)  # Brown blend
 ✓ Circle(color=BLUE)
-✓ Rectangle(color=ORANGE)
-✓ Line(color="#8B4513")  # Custom brown
 
 Example INCORRECT (will crash):
-✗ Circle(color=BROWN)  # NameError!
+✗ color=BROWN  # NameError!
+✗ interpolate_color(BROWN, WHITE, 0.2)  # NameError!
 
-STRICT CODE TEMPLATE WITH PROPER LAYOUT:
+GEOMETRY & STYLING RULES (CRITICAL - PREVENTS CRASHES):
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+1. DASHED LINES:
+   ✗ NEVER use 'dash_length' parameter inside Line() - IT DOES NOT EXIST!
+   ✗ NEVER use 'linestyle' parameter - IT DOES NOT EXIST!
+   ✓ USE the 'DashedLine' class for dashed lines:
+     Example: DashedLine(start=A, end=B, dashed_ratio=0.5)
+   ✓ Or wrap in DashedVMobject: DashedVMobject(Line(A, B))
+
+2. ARROWS:
+   ✗ NEVER use 'Arrow(..., path_arc=...)' - will crash!
+   ✓ USE 'CurvedArrow(start_point, end_point, angle=...)' for curved paths.
+   ✗ NEVER use 'arrow_size' parameter - use 'tip_length' instead.
+
+3. INVALID PARAMETERS THAT WILL CRASH (NEVER USE):
+   ✗ dash_length - DOES NOT EXIST in Manim
+   ✗ linestyle - DOES NOT EXIST in Manim (this is Matplotlib!)
+   ✗ arrow_size - DOES NOT EXIST (use tip_length)
+   ✗ dashes - DOES NOT EXIST
+   ✗ linewidth - use 'stroke_width' instead
+
+4. CORRECT EXAMPLES:
+   ✓ Line(A, B, color=GRAY)  # Solid line
+   ✓ DashedLine(A, B, dashed_ratio=0.5)  # Dashed line
+   ✓ Arrow(A, B, tip_length=0.2)  # Arrow with custom tip
+   ✓ CurvedArrow(A, B, angle=PI/4)  # Curved arrow
+
+STRICT CODE TEMPLATE WITH NUCLEAR CLEARS (MUST FOLLOW THIS PATTERN):
 ```python
 from manim import *
 
 class PhysicsSolution(Scene):
     def construct(self):
-        # 1. TITLE (Short, with margins, split if long)
-        title = Text("Problem Title", font_size=32).to_edge(UP, buff=0.5)
-        # For long titles:
-        # title = Text("Long Title\\nSplit Into Lines", font_size=30).to_edge(UP, buff=0.5)
+        # ═══════════════ SECTION 1: TITLE (5 seconds) ═══════════════
+        title = Text("Problem Title", font_size=26).to_edge(UP, buff=0.5)
         self.play(Write(title))
+        self.wait(2)
+        
+        # *** NUCLEAR CLEAR before Section 2 ***
+        self.play(*[FadeOut(mob) for mob in self.mobjects])
+        
+        # ═══════════════ SECTION 2: SETUP/DIAGRAM (10 seconds) ═══════════════
+        # Maximum 4 elements: section_title + diagram + 2 labels
+        section_title = Text("Setup", font_size=22).to_edge(UP)
+        diagram = Circle(radius=1, color=BLUE).move_to(ORIGIN)
+        label = MathTex("r=1", font_size=18).next_to(diagram, DOWN)
+        
+        self.play(Write(section_title))
+        self.play(Create(diagram), Write(label))
+        self.wait(2)
+        
+        # *** NUCLEAR CLEAR before Section 3 ***
+        self.play(*[FadeOut(mob) for mob in self.mobjects])
+        
+        # ═══════════════ SECTION 3: SOLUTION STEPS (15 seconds) ═══════════════
+        # Show ONE step at a time using Transform (not Write!)
+        step_title = Text("Solution", font_size=22).to_edge(UP)
+        self.play(Write(step_title))
+        
+        # Step 1
+        eq1 = MathTex(r"A = \pi r^2", font_size=24).move_to(ORIGIN)
+        self.play(Write(eq1))
         self.wait(1)
-        self.play(FadeOut(title))
         
-        # 2. VISUAL DIAGRAM (Left side, within frame)
-        particle = Circle(radius=0.3, color=BLUE)
-        particle.shift(LEFT*4)  # Keep within -6 to 6
-        self.play(Create(particle))
-        
-        # 3. EQUATIONS (Right side, arranged properly)
-        eq1 = MathTex(r"F = ma", font_size=28)
-        eq2 = MathTex(r"v = u + at", font_size=28)
-        equations = VGroup(eq1, eq2).arrange(DOWN, buff=0.4)
-        equations.to_edge(RIGHT, buff=1.0)  # Critical: keeps within frame
-        self.play(Write(equations))
-        
-        # 4. ANIMATE PHYSICS (smooth motion)
-        self.play(particle.animate.shift(RIGHT*4), run_time=2)
+        # Step 2 - TRANSFORM to replace, not Write to add!
+        eq2 = MathTex(r"A = \pi (1)^2", font_size=24).move_to(ORIGIN)
+        self.play(Transform(eq1, eq2))
         self.wait(1)
         
-        # 5. FINAL ANSWER (center, clear, reasonable size)
-        answer = Text("Final Answer", font_size=32, color=GREEN)
-        answer.move_to(ORIGIN)
-        self.play(Write(answer))
+        # Step 3 - Continue transforming
+        eq3 = MathTex(r"A = \pi", font_size=24).move_to(ORIGIN)
+        self.play(Transform(eq1, eq3))
+        self.wait(1)
+        
+        # *** NUCLEAR CLEAR before Final Answer ***
+        self.play(*[FadeOut(mob) for mob in self.mobjects])
+        
+        # ═══════════════ SECTION 4: FINAL ANSWER (5 seconds) ═══════════════
+        answer_title = Text("Answer", font_size=24, color=GREEN).to_edge(UP)
+        final_answer = MathTex(r"A = \pi \approx 3.14", font_size=28, color=GREEN)
+        final_answer.move_to(ORIGIN)
+        box = SurroundingRectangle(final_answer, color=GREEN, buff=0.3)
+        
+        self.play(Write(answer_title))
+        self.play(Write(final_answer), Create(box))
+        self.wait(3)
+```
+
+CRITICAL LAYOUT EXAMPLES (FOLLOW THESE PATTERNS):
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+Example 1: PROPER SECTION FLOW (ALWAYS DO THIS)
+```python
+# Title section - ALONE
+title = Text("Heat Transfer", font_size=26).to_edge(UP, buff=0.5)
+self.play(Write(title))
+self.wait(1)
+self.play(FadeOut(title))  # ← Clear before content
+
+# Content section
+diagram = VGroup(plate1, plate2).to_edge(LEFT, buff=1.0)
+self.play(Create(diagram))
+# ... more animations ...
+self.play(FadeOut(diagram))  # ← Clear before final answer
+
+# Final answer section
+answer = MathTex(r"Answer").move_to(ORIGIN)
+self.play(Write(answer))
+```
+
+Example 2: LONG EQUATIONS (MUST SCALE)
+```python
+# For equations longer than ~30 chars, ALWAYS scale
+long_eq = MathTex(r"3W_S = \sigma(T_P^4 - T_1^4) + \sigma(T_1^4 - T_2^4) + \sigma(T_2^4 - T_Q^4)")
+long_eq.scale_to_fit_width(12)  # ← MANDATORY
+long_eq.move_to(ORIGIN)
+self.play(Write(long_eq))
+```
+
+Example 3: MULTIPLE EQUATIONS (VERTICAL GROUP)
+```python
+eq1 = MathTex(r"W_0 = \sigma(T_P^4 - T_Q^4)", font_size=22)
+eq2 = MathTex(r"W_S = \sigma(T_P^4 - T_1^4)", font_size=22)
+eq3 = MathTex(r"W_S = \sigma(T_1^4 - T_2^4)", font_size=22)
+eq_group = VGroup(eq1, eq2, eq3).arrange(DOWN, buff=0.4, aligned_edge=LEFT)
+eq_group.scale_to_fit_width(11)  # ← Scale group if needed
+eq_group.move_to(ORIGIN)
+self.play(Write(eq_group))
+```
+
+Example 4: DIAGRAM + EQUATIONS LAYOUT
+```python
+# Clear title first, then show diagram and equations
+self.play(FadeOut(title))
+
+# Left side - diagram (scaled to fit)
+diagram = VGroup(plate1, plate2, arrows)
+diagram.scale_to_fit_width(5)
+diagram.to_edge(LEFT, buff=1.0)
+
+# Right side - equations (scaled to fit)
+equations = VGroup(eq1, eq2).arrange(DOWN, buff=0.4)
+equations.scale_to_fit_width(5)
+equations.to_edge(RIGHT, buff=1.0)
+
+self.play(Create(diagram), Write(equations))
+```
+
+Example 5: AVOID OVERLAP (WRONG vs CORRECT)
+```python
+# WRONG - will overlap:
+title = Text("Title").to_edge(UP)
+eq = MathTex("E=mc^2").to_edge(UP)  # ← Same position as title!
+
+# CORRECT - clear first:
+title = Text("Title").to_edge(UP)
+self.play(Write(title))
+self.play(FadeOut(title))  # ← Clear title
+eq = MathTex("E=mc^2").to_edge(UP)  # ← Now safe to use same position
+self.play(Write(eq))
+```
+
+3D SCENE TEXT RULES (CRITICAL FOR READABLE TEXT IN 3D):
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+When using ThreeDScene, ThreeDAxes, or any 3D coordinates:
+
+⚠️ PROBLEM: Text placed directly in 3D space becomes rotated and unreadable!
+
+1. USE FIXED FRAME TEXT FOR ALL LABELS AND EQUATIONS:
+   ✓ ALWAYS use self.add_fixed_in_frame_mobjects() for text in 3D scenes
+   This keeps text as a 2D overlay that doesn't rotate with the camera.
+
+2. 3D SCENE TEMPLATE (MUST FOLLOW):
+```python
+from manim import *
+
+class Solution3D(ThreeDScene):
+    def construct(self):
+        # Setup camera angle
+        self.set_camera_orientation(phi=75*DEGREES, theta=45*DEGREES)
+        
+        # Create 3D axes
+        axes = ThreeDAxes()
+        self.play(Create(axes))
+        
+        # CORRECT: Title as fixed 2D overlay
+        title = Text("3D Geometry Problem", font_size=26)
+        title.to_corner(UL)
+        self.add_fixed_in_frame_mobjects(title)  # ← CRITICAL!
+        self.play(Write(title))
+        
+        # Create 3D objects
+        point = Dot3D(point=[1, 2, 3], color=RED)
+        self.play(Create(point))
+        
+        # CORRECT: Point label as fixed overlay
+        label = MathTex("P(1, 2, 3)", font_size=20)
+        label.to_corner(UR)  # Position in 2D screen space
+        self.add_fixed_in_frame_mobjects(label)  # ← CRITICAL!
+        self.play(Write(label))
+        
+        # CORRECT: Equations as fixed overlay
+        equation = MathTex(r"d = \\sqrt{{x^2 + y^2 + z^2}}", font_size=24)
+        equation.to_edge(DOWN)
+        self.add_fixed_in_frame_mobjects(equation)  # ← CRITICAL!
+        self.play(Write(equation))
+        
+        # Camera rotation (text stays fixed!)
+        self.move_camera(phi=60*DEGREES, theta=120*DEGREES, run_time=2)
         self.wait(2)
 ```
 
-CRITICAL LAYOUT EXAMPLES:
-━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
-Example 1: Long Title (CORRECT)
-    title = Text("Radiation Heat Transfer\\nbetween Parallel Plates", font_size=30)
-    title.to_edge(UP, buff=0.5)
+3. RULES FOR 3D TEXT:
+   ✗ NEVER place Text/MathTex directly at 3D coordinates without fixed_in_frame
+   ✗ NEVER use text.move_to([x, y, z]) for 3D points - it will rotate!
+   ✓ ALWAYS call self.add_fixed_in_frame_mobjects(text) BEFORE animating
+   ✓ Position fixed text using to_corner(), to_edge(), or 2D coordinates
+   ✓ Use smaller font_size (18-22) for labels in 3D scenes
 
-Example 2: Multiple Equations (CORRECT)
-    eq1 = MathTex(r"W_0 = \\sigma T_P^4 - \\sigma T_Q^4", font_size=26)
-    eq2 = MathTex(r"W_S = \\sigma T_P^4 - \\sigma T_A^4", font_size=26)
-    eq_group = VGroup(eq1, eq2).arrange(DOWN, buff=0.3)
-    eq_group.to_edge(RIGHT, buff=1.0)
+4. LABELING 3D POINTS (CORRECT APPROACH):
+```python
+# Create the 3D point
+point_P = Dot3D(point=[2, 3, 1], color=BLUE)
+self.play(Create(point_P))
 
-Example 3: Probability/Combinatorics (CORRECT for circular arrangements)
-    # Circular table with people
-    table = Circle(radius=2, color=WHITE)
-    # Positions around circle (10 people = 10 positions)
-    positions = VGroup(*[Dot(table.point_from_proportion(i/10), color=BLUE) for i in range(10)])
-    # Labels for people
-    labels = VGroup(*[Text("P", font_size=18).next_to(pos, OUT) for pos in positions])
-    # Probability calculation
-    prob_eq = MathTex("P(A|B) = P(A and B) / P(B)", font_size=28)
-    prob_eq.to_edge(RIGHT, buff=1.0)
-    
-Example 4: Geometry Problem (CORRECT)
-    # Triangle with measurements
-    triangle = Polygon(ORIGIN, RIGHT*3, UP*2, color=YELLOW)
-    side_label = Text("a = 5", font_size=24).next_to(triangle, DOWN)
-    self.play(Create(triangle), Write(side_label))
+# Create label as FIXED 2D text
+label_P = MathTex("P(2, 3, 1)", font_size=18, color=BLUE)
+label_P.to_corner(UR).shift(DOWN*0.5)  # 2D screen position
+self.add_fixed_in_frame_mobjects(label_P)
+self.play(Write(label_P))
 
-Example 3: Diagram + Math Layout (CORRECT)
-    # Left side - diagram
-    diagram = VGroup(plate1, plate2, arrows).scale(0.8)
-    diagram.to_edge(LEFT, buff=1.0)
-    
-    # Right side - equations
-    equations = VGroup(eq1, eq2, eq3).arrange(DOWN, buff=0.3)
-    equations.to_edge(RIGHT, buff=1.0)
+# For multiple point labels, stack them:
+labels = VGroup(
+    MathTex("P(2, 3, 1)", font_size=18),
+    MathTex("Q(1, 0, 2)", font_size=18),
+    MathTex("R(0, 1, 3)", font_size=18)
+).arrange(DOWN, buff=0.3).to_corner(UR)
+self.add_fixed_in_frame_mobjects(labels)
+self.play(Write(labels))
+```
+
+5. COMMON 3D MISTAKES TO AVOID:
+```python
+# WRONG - text will be tilted/unreadable:
+label = Text("Point A").move_to([1, 2, 3])
+self.play(Write(label))
+
+# WRONG - text rotates with camera:
+label = MathTex("P").next_to(point_3d, UP)
+self.play(Write(label))
+
+# CORRECT - text stays readable:
+label = MathTex("P", font_size=20).to_corner(UR)
+self.add_fixed_in_frame_mobjects(label)
+self.play(Write(label))
 ```
 
 ANIMATION QUALITY GUIDELINES (FOR BEST RESULTS):
@@ -543,6 +873,9 @@ CRITICAL RULES FOR ALL PROBLEM TYPES:
 - DO NOT reference external files - create all visuals with Manim shapes
 - Do not use external image assets; draw everything with code
 - Ensure all LaTeX is properly escaped (e.g., MathTex(r"\\\\frac{{m}}{{M}}"))
+- CRITICAL: When using Greek letters (\\lambda, \\alpha, etc.) in Title or Text, ALWAYS use raw strings:
+  ✓ Title(r"Solve for \\lambda")  # CORRECT - raw string with r prefix
+  ✗ Title("Solve for \\lambda")   # WRONG - will cause LaTeX error!
 - Class name MUST be exactly: class PhysicsSolution(Scene):
 - NO markdown wrappers (no ```)
 - NO explanations before or after
@@ -655,6 +988,36 @@ REMEMBER: First character = 'f', First line = "from manim import *"
         import logging
         logger = logging.getLogger(__name__)
         
+        # CRITICAL FIX: Global replacement of BROWN (catches all usages including interpolate_color)
+        if 'BROWN' in code:
+            logger.warning("Found BROWN in code - replacing with hex color globally")
+            code = code.replace('BROWN', '"#8B4513"')
+        
+        # CRITICAL FIX: Remove invalid 'dash_length' parameter (Gemini hallucinates this from Matplotlib)
+        # Line() does not accept dash_length - use DashedLine instead
+        if 'dash_length' in code:
+            logger.warning("Found invalid dash_length parameter - removing it")
+            code = re.sub(r',\s*dash_length\s*=\s*[\d\.]+', '', code)
+            code = re.sub(r'dash_length\s*=\s*[\d\.]+\s*,?', '', code)
+        
+        # CRITICAL FIX: Remove invalid 'dashed_ratio' if used incorrectly on Line
+        # Only DashedLine accepts dashed_ratio
+        if 'Line(' in code and 'dashed_ratio' in code:
+            logger.warning("Found invalid dashed_ratio on Line - removing it")
+            code = re.sub(r',\s*dashed_ratio\s*=\s*[\d\.]+', '', code)
+        
+        # CRITICAL FIX: Remove 'arrow_size' parameter (use tip_length instead)
+        if 'arrow_size' in code:
+            logger.warning("Found invalid arrow_size parameter - removing it")
+            code = re.sub(r',\s*arrow_size\s*=\s*[\d\.]+', '', code)
+            code = re.sub(r'arrow_size\s*=\s*[\d\.]+\s*,?', '', code)
+        
+        # CRITICAL FIX: Remove 'dashes' parameter (doesn't exist in Manim)
+        if 'dashes' in code:
+            logger.warning("Found invalid dashes parameter - removing it")
+            code = re.sub(r',\s*dashes\s*=\s*\[[^\]]*\]', '', code)
+            code = re.sub(r'dashes\s*=\s*\[[^\]]*\]\s*,?', '', code)
+        
         # Fix 0: Replace invalid Manim color names with valid alternatives
         color_replacements = {
             'BROWN': '"#8B4513"',      # Brown hex color (QUOTED)
@@ -748,11 +1111,105 @@ REMEMBER: First character = 'f', First line = "from manim import *"
             code = re.sub(r'self\.play\([^)]*problem_image[^)]*\)\s*\n', '', code)
             code = re.sub(r'self\.add\([^)]*problem_image[^)]*\)\s*\n', '', code)
         
+        # Fix: 3D Scene Text - Add fixed_in_frame_mobjects for text in ThreeDScene
+        # This prevents text from rotating with the camera and becoming unreadable
+        if 'ThreeDScene' in code or 'ThreeDAxes' in code or 'Dot3D' in code:
+            logger.warning("3D Scene detected - ensuring text is fixed in frame")
+            
+            # Find all Text and MathTex variable assignments
+            text_vars = re.findall(r'(\w+)\s*=\s*(?:Text|MathTex)\s*\(', code)
+            
+            # For each text variable, check if it's added with fixed_in_frame
+            for var in text_vars:
+                # Check if this variable already has add_fixed_in_frame_mobjects
+                if f'add_fixed_in_frame_mobjects({var})' not in code and f'add_fixed_in_frame_mobjects( {var})' not in code:
+                    # Find where this text is animated (self.play(Write(var)))
+                    write_pattern = rf'(self\.play\s*\(\s*Write\s*\(\s*{var}\s*\))'
+                    if re.search(write_pattern, code):
+                        # Insert add_fixed_in_frame_mobjects before the self.play
+                        code = re.sub(
+                            write_pattern,
+                            rf'self.add_fixed_in_frame_mobjects({var})\n        \1',
+                            code
+                        )
+                        logger.info(f"Added fixed_in_frame for text variable: {var}")
+                    
+                    # Also check for FadeIn
+                    fadein_pattern = rf'(self\.play\s*\(\s*FadeIn\s*\(\s*{var}\s*\))'
+                    if re.search(fadein_pattern, code):
+                        code = re.sub(
+                            fadein_pattern,
+                            rf'self.add_fixed_in_frame_mobjects({var})\n        \1',
+                            code
+                        )
+                        logger.info(f"Added fixed_in_frame for text variable: {var}")
+        
         # Fix: Replace deprecated/non-existent Manim names
         # ShowCreation is deprecated → use Create
         if 'ShowCreation' in code:
             logger.warning("Replacing deprecated ShowCreation with Create")
             code = code.replace('ShowCreation', 'Create')
+        
+        # Fix: Title/Text with LaTeX content (like \lambda, \alpha, etc.)
+        # Title("Solve for \lambda") fails because \l is invalid escape
+        # Convert to raw string or use proper escaping
+        latex_commands = [r'\\lambda', r'\\alpha', r'\\beta', r'\\gamma', r'\\delta', r'\\theta', 
+                         r'\\sigma', r'\\pi', r'\\omega', r'\\mu', r'\\epsilon', r'\\phi', r'\\psi',
+                         r'\\frac', r'\\sqrt', r'\\sum', r'\\int', r'\\infty', r'\\partial']
+        
+        # Find Title or Text with unescaped LaTeX
+        for latex_cmd in latex_commands:
+            # Pattern: Title("...\\lambda...") where \\ is not doubled (raw string issue)
+            # We need to find Title("...\lambda...") and convert to Title(r"...\lambda...")
+            simple_pattern = latex_cmd.replace('\\\\', '\\')  # Convert \\lambda to \lambda for matching
+            
+            # Check for Title with this LaTeX command (non-raw string)
+            if f'Title("{simple_pattern[1:]}' in code or f"Title('{simple_pattern[1:]}" in code:
+                logger.warning(f"Found Title with LaTeX {simple_pattern} - converting to raw string")
+                # Convert Title("...\lambda...") to Title(r"...\lambda...")
+                code = re.sub(
+                    rf'Title\("([^"]*{re.escape(simple_pattern)}[^"]*)"\)',
+                    lambda m: f'Title(r"{m.group(1)}")',
+                    code
+                )
+                code = re.sub(
+                    rf"Title\('([^']*{re.escape(simple_pattern)}[^']*)'\)",
+                    lambda m: f"Title(r'{m.group(1)}')",
+                    code
+                )
+            
+            # Same for Text
+            if f'Text("{simple_pattern[1:]}' in code or f"Text('{simple_pattern[1:]}" in code:
+                logger.warning(f"Found Text with LaTeX {simple_pattern} - converting to raw string")
+                code = re.sub(
+                    rf'Text\("([^"]*{re.escape(simple_pattern)}[^"]*)"\)',
+                    lambda m: f'Text(r"{m.group(1)}")',
+                    code
+                )
+                code = re.sub(
+                    rf"Text\('([^']*{re.escape(simple_pattern)}[^']*)'\)",
+                    lambda m: f"Text(r'{m.group(1)}')",
+                    code
+                )
+        
+        # Also fix the common case: Title("...\l...") which is an invalid escape
+        # This happens when \lambda is written but Python sees \l as invalid
+        if '\\l' in code and 'Title(' in code:
+            logger.warning("Found potential invalid escape in Title - adding raw string prefix")
+            # Find Title with potential escape issues and make them raw
+            code = re.sub(
+                r'Title\("([^"]*\\[a-zA-Z][^"]*)"\)',
+                lambda m: f'Title(r"{m.group(1)}")',
+                code
+            )
+        
+        if '\\l' in code and 'Text(' in code:
+            logger.warning("Found potential invalid escape in Text - adding raw string prefix")
+            code = re.sub(
+                r'Text\("([^"]*\\[a-zA-Z][^"]*)"\)',
+                lambda m: f'Text(r"{m.group(1)}")',
+                code
+            )
         
         # Fix: Handle TransformMatchingTex usage issues
         # This is a POWERFUL feature - we want to keep it but fix incorrect usage
@@ -775,7 +1232,7 @@ REMEMBER: First character = 'f', First line = "from manim import *"
             )
         
         # Fix: Remove other non-existent methods
-        non_existent_methods = ['get_arc_center', 'set_arc_center', 'get_tangent_vector', 'get_unit_vector', 'midpoint', 'point_at_angle']
+        non_existent_methods = ['get_arc_center', 'set_arc_center', 'get_tangent_vector', 'get_unit_vector', 'midpoint', 'point_at_angle', 'get_position']
         for method in non_existent_methods:
             if method in code:
                 logger.warning(f"Removing/replacing non-existent method: {method}")
@@ -785,8 +1242,19 @@ REMEMBER: First character = 'f', First line = "from manim import *"
                 elif method == 'point_at_angle':
                     # Replace with point_from_proportion
                     code = re.sub(r'\.point_at_angle\(([^)]+)\)', r'.point_from_proportion(\1/(2*PI))', code)
+                elif method == 'get_position':
+                    # Replace .get_position() with .get_center() - the correct Manim method
+                    logger.warning("Replacing .get_position() with .get_center()")
+                    code = re.sub(r'\.get_position\(\)', '.get_center()', code)
                 else:
                     code = re.sub(rf'\.{method}\([^)]*\)', '', code)
+        
+        # CRITICAL FIX: Remove invalid .aligned_edge() method chain
+        # Manim doesn't have .aligned_edge() method - it's a parameter for .next_to() or .arrange()
+        # Pattern: .move_to(...).aligned_edge(LEFT) → .move_to(...)
+        if '.aligned_edge(' in code:
+            logger.warning("Removing invalid .aligned_edge() method chain")
+            code = re.sub(r'\.aligned_edge\s*\(\s*\w+\s*\)', '', code)
         
         # Fix: Fix LaTeX escape sequences (SAFE VERSION - only simple single-line cases)
         def safe_latex_to_raw(match):
@@ -880,6 +1348,53 @@ REMEMBER: First character = 'f', First line = "from manim import *"
             code
         )
         
+        # Fix 5d: Auto-scale long MathTex equations to prevent overflow
+        # Find MathTex with long content (>50 chars in the LaTeX string)
+        def check_and_scale_long_mathtex(match):
+            full_line = match.group(0)
+            latex_content = match.group(1) if match.lastindex >= 1 else ""
+            
+            # If LaTeX content is long and no scale_to_fit_width already present
+            if len(latex_content) > 50 and 'scale_to_fit_width' not in full_line:
+                # Check if next line already has scale
+                return full_line  # Return as-is, we'll add a post-processing step
+            return full_line
+        
+        # Add scale_to_fit_width for equations that are positioned at ORIGIN or center
+        # and have long content
+        lines = code.split('\n')
+        new_lines = []
+        i = 0
+        while i < len(lines):
+            line = lines[i]
+            new_lines.append(line)
+            
+            # Check if this line creates a MathTex with long content
+            mathtex_match = re.search(r'(\w+)\s*=\s*MathTex\(r?["\'](.{50,})["\']', line)
+            if mathtex_match:
+                var_name = mathtex_match.group(1)
+                # Check if next lines already have scale_to_fit_width for this var
+                has_scale = False
+                for j in range(i+1, min(i+5, len(lines))):
+                    if f'{var_name}.scale_to_fit_width' in lines[j] or f'{var_name}.scale(' in lines[j]:
+                        has_scale = True
+                        break
+                
+                # If no scale and the var is used with move_to(ORIGIN) or to_edge
+                if not has_scale:
+                    for j in range(i+1, min(i+5, len(lines))):
+                        if f'{var_name}.move_to' in lines[j] or f'{var_name}.to_edge' in lines[j]:
+                            # Insert scale_to_fit_width before the positioning
+                            indent = len(lines[j]) - len(lines[j].lstrip())
+                            scale_line = ' ' * indent + f'{var_name}.scale_to_fit_width(11)'
+                            new_lines.append(scale_line)
+                            logger.warning(f"Auto-added scale_to_fit_width for long equation: {var_name}")
+                            break
+            
+            i += 1
+        
+        code = '\n'.join(new_lines)
+        
         # Fix 6: Clean up malformed comma/parenthesis patterns (CRITICAL)
         # These can be introduced by parameter removal
         code = re.sub(r',\s*,', ',', code)  # Double comma → single comma
@@ -897,6 +1412,58 @@ REMEMBER: First character = 'f', First line = "from manim import *"
             r'\1, \2',
             code
         )
+        
+        # Fix 8: OVERLAP PREVENTION - Inject nuclear clears if too many Write() without FadeOut
+        # Count Write/FadeIn vs FadeOut calls
+        write_count = len(re.findall(r'self\.play\s*\(\s*(?:Write|FadeIn|Create)\s*\(', code))
+        fadeout_count = len(re.findall(r'(?:FadeOut|self\.play\s*\(\s*\*\s*\[)', code))
+        
+        if write_count > fadeout_count + 5:
+            logger.warning(f"Detected potential overlap: {write_count} writes vs {fadeout_count} fadeouts")
+            
+            # Find long sections without any FadeOut and inject nuclear clears
+            lines = code.split('\n')
+            new_lines = []
+            write_streak = 0
+            
+            for i, line in enumerate(lines):
+                new_lines.append(line)
+                
+                # Count writes in this line
+                if re.search(r'self\.play\s*\(\s*(?:Write|FadeIn|Create)\s*\(', line):
+                    write_streak += 1
+                
+                # Reset streak on FadeOut
+                if 'FadeOut' in line or 'FadeOut(mob)' in line:
+                    write_streak = 0
+                
+                # If we've had 5+ writes without a fadeout, inject a nuclear clear
+                if write_streak >= 5:
+                    # Check if next line is already a FadeOut
+                    next_line = lines[i+1] if i+1 < len(lines) else ""
+                    if 'FadeOut' not in next_line and 'self.wait' in line:
+                        indent = len(line) - len(line.lstrip())
+                        nuclear_clear = ' ' * indent + "self.play(*[FadeOut(mob) for mob in self.mobjects])  # Auto-injected clear"
+                        new_lines.append(nuclear_clear)
+                        logger.warning(f"Injected nuclear clear after line {i+1}")
+                        write_streak = 0
+            
+            code = '\n'.join(new_lines)
+        
+        # Fix 9: Detect multiple to_edge(UP) without intermediate FadeOut
+        lines = code.split('\n')
+        to_edge_up_lines = []
+        last_fadeout_line = -1
+        
+        for i, line in enumerate(lines):
+            if 'FadeOut' in line:
+                last_fadeout_line = i
+            if '.to_edge(UP' in line or 'to_edge(UP' in line:
+                # Check if there's been a FadeOut since last to_edge(UP)
+                if to_edge_up_lines and to_edge_up_lines[-1] > last_fadeout_line:
+                    # Potential overlap - log warning
+                    logger.warning(f"Potential overlap: Multiple to_edge(UP) at lines {to_edge_up_lines[-1]+1} and {i+1} without FadeOut")
+                to_edge_up_lines.append(i)
         
         return code
     

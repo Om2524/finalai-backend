@@ -23,8 +23,10 @@ COPY . .
 RUN mkdir -p videos temp && chmod -R 777 videos temp
 
 # Expose the port FastAPI will run on
-EXPOSE 8000
+# Cloud Run uses PORT env variable (defaults to 8080)
+EXPOSE 8080
 
 # Start the application
 # We use 0.0.0.0 to allow external access
-CMD ["uvicorn", "app.main:app", "--host", "0.0.0.0", "--port", "8000"]
+# Cloud Run sets PORT env variable, defaulting to 8080
+CMD ["sh", "-c", "uvicorn app.main:app --host 0.0.0.0 --port ${PORT:-8080}"]
