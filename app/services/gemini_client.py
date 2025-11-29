@@ -143,49 +143,47 @@ Generate the code now:"""
                 logger.info(f"Retry response: {len(retry_text)} characters")
                 code = self._extract_code(retry_text)  # Try extraction again
             
-            # Check completeness (balanced parentheses, etc.)
-            is_complete, completeness_error = self._check_completeness(code)
+            # STEP 1: Apply auto-fix FIRST (includes bracket balancing)
+            # This fixes common issues like unbalanced parentheses before validation
+            original_code = code  # Save original before auto-fix
+            logger.info("Applying auto-fix to generated code...")
+            code_with_fixes = self._fix_common_issues(code)
+            
+            # STEP 2: Check completeness (balanced parentheses, etc.) AFTER auto-fix
+            is_complete, completeness_error = self._check_completeness(code_with_fixes)
             if not is_complete:
-                logger.error(f"Code appears incomplete: {completeness_error}")
+                logger.error(f"Code still incomplete after auto-fix: {completeness_error}")
                 from pathlib import Path
                 debug_file = Path("/tmp/incomplete_code.py")
-                debug_file.write_text(code)
+                debug_file.write_text(code_with_fixes)
                 logger.error(f"Incomplete code saved to: {debug_file}")
                 raise ValueError(f"Generated code is incomplete: {completeness_error}")
             
-            # Check Python syntax
-            is_valid_syntax, syntax_error = self._check_syntax(code)
-            if not is_valid_syntax:
-                logger.error(f"Generated code has syntax errors: {syntax_error}")
-                from pathlib import Path
-                debug_file = Path("/tmp/syntax_error_code.py")
-                debug_file.write_text(code)
-                logger.error(f"Code with syntax error saved to: {debug_file}")
-                raise ValueError(f"Generated code has syntax errors: {syntax_error}")
+            # STEP 3: Check Python syntax AFTER auto-fix
+            is_valid_syntax, syntax_error = self._check_syntax(code_with_fixes)
             
-            # Auto-fix common issues (missing imports, etc.)
-            original_code = code  # Save original before auto-fix
-            code_with_fixes = self._fix_common_issues(code)
-            
-            # CRITICAL: Re-check syntax AFTER auto-fix (auto-fix might introduce errors)
-            is_valid_after_fix, syntax_error_after = self._check_syntax(code_with_fixes)
-            
-            if is_valid_after_fix:
+            if is_valid_syntax:
                 # Auto-fix succeeded, use the fixed code
                 code = code_with_fixes
-                logger.info("✓ Auto-fix applied successfully without breaking syntax")
+                logger.info("✓ Auto-fix applied successfully - syntax valid")
             else:
-                # Auto-fix broke the code - fallback to original
-                logger.warning(f"Auto-fix broke syntax: {syntax_error_after}")
-                logger.warning("Falling back to original code (may have runtime warnings)")
-                from pathlib import Path
-                debug_file = Path("/tmp/autofix_broke_code.py")
-                debug_file.write_text(code_with_fixes)
-                logger.error(f"Broken code saved to: {debug_file}")
+                # Auto-fix resulted in syntax errors - try original code
+                logger.warning(f"Auto-fix resulted in syntax errors: {syntax_error}")
+                logger.warning("Checking if original code has better syntax...")
                 
-                # Use original code (might have warnings but at least valid syntax)
-                code = original_code
-                logger.info("Using original code without auto-fix")
+                # Check if original was better
+                orig_syntax_valid, orig_syntax_error = self._check_syntax(original_code)
+                
+                if orig_syntax_valid:
+                    logger.info("Original code has valid syntax - using original")
+                    code = original_code
+                else:
+                    # Both have issues - save for debugging and raise error
+                    from pathlib import Path
+                    debug_file = Path("/tmp/syntax_error_code.py")
+                    debug_file.write_text(code_with_fixes)
+                    logger.error(f"Code with syntax error saved to: {debug_file}")
+                    raise ValueError(f"Generated code has syntax errors: {syntax_error}")
             
             # Validate basic code structure
             if not self._validate_code(code):
@@ -1481,6 +1479,130 @@ REMEMBER: First character = 'f', First line = "from manim import *"
                     # Potential overlap - log warning
                     logger.warning(f"Potential overlap: Multiple to_edge(UP) at lines {to_edge_up_lines[-1]+1} and {i+1} without FadeOut")
                 to_edge_up_lines.append(i)
+        
+        # CRITICAL FIX: Balance parentheses, brackets, and braces
+        # This fixes truncated or malformed code from Gemini
+        code = self._balance_brackets(code)
+        
+        return code
+    
+    def _balance_brackets(self, code: str) -> str:
+        """
+        Attempt to balance parentheses, brackets, and braces in generated code.
+        This handles cases where Gemini generates truncated or malformed code.
+        """
+        import logging
+        logger = logging.getLogger(__name__)
+        
+        # Count brackets
+        open_parens = code.count('(')
+        close_parens = code.count(')')
+        open_brackets = code.count('[')
+        close_brackets = code.count(']')
+        open_braces = code.count('{')
+        close_braces = code.count('}')
+        
+        paren_diff = open_parens - close_parens
+        bracket_diff = open_brackets - close_brackets
+        brace_diff = open_braces - close_braces
+        
+        if paren_diff == 0 and bracket_diff == 0 and brace_diff == 0:
+            return code  # Already balanced
+        
+        logger.warning(f"Unbalanced brackets detected: parens={paren_diff:+d}, brackets={bracket_diff:+d}, braces={brace_diff:+d}")
+        
+        # Strategy 1: If there are MORE closing than opening, remove excess from end
+        # This is common when Gemini adds extra closing brackets
+        if paren_diff < 0:  # More closing parens
+            excess = abs(paren_diff)
+            logger.warning(f"Removing {excess} excess closing parentheses from end")
+            # Remove from the end of the code, line by line
+            lines = code.split('\n')
+            removed = 0
+            for i in range(len(lines) - 1, -1, -1):
+                while removed < excess and ')' in lines[i]:
+                    # Find the last ) in this line and remove it
+                    last_pos = lines[i].rfind(')')
+                    if last_pos != -1:
+                        lines[i] = lines[i][:last_pos] + lines[i][last_pos+1:]
+                        removed += 1
+                if removed >= excess:
+                    break
+            code = '\n'.join(lines)
+        
+        elif paren_diff > 0:  # More opening parens - add closing at end
+            excess = paren_diff
+            logger.warning(f"Adding {excess} closing parentheses at end")
+            # Add before the last line (likely after last self.wait())
+            lines = code.rstrip().split('\n')
+            # Find the last non-empty line with proper indentation
+            for i in range(len(lines) - 1, -1, -1):
+                if lines[i].strip():
+                    indent = len(lines[i]) - len(lines[i].lstrip())
+                    # Add closing parens with same indentation
+                    lines[i] = lines[i] + ')' * excess
+                    break
+            code = '\n'.join(lines)
+        
+        # Same for brackets
+        if bracket_diff < 0:
+            excess = abs(bracket_diff)
+            logger.warning(f"Removing {excess} excess closing brackets")
+            lines = code.split('\n')
+            removed = 0
+            for i in range(len(lines) - 1, -1, -1):
+                while removed < excess and ']' in lines[i]:
+                    last_pos = lines[i].rfind(']')
+                    if last_pos != -1:
+                        lines[i] = lines[i][:last_pos] + lines[i][last_pos+1:]
+                        removed += 1
+                if removed >= excess:
+                    break
+            code = '\n'.join(lines)
+        elif bracket_diff > 0:
+            excess = bracket_diff
+            logger.warning(f"Adding {excess} closing brackets at end")
+            lines = code.rstrip().split('\n')
+            for i in range(len(lines) - 1, -1, -1):
+                if lines[i].strip():
+                    lines[i] = lines[i] + ']' * excess
+                    break
+            code = '\n'.join(lines)
+        
+        # Same for braces (less common but handle anyway)
+        if brace_diff < 0:
+            excess = abs(brace_diff)
+            logger.warning(f"Removing {excess} excess closing braces")
+            lines = code.split('\n')
+            removed = 0
+            for i in range(len(lines) - 1, -1, -1):
+                while removed < excess and '}' in lines[i]:
+                    last_pos = lines[i].rfind('}')
+                    if last_pos != -1:
+                        lines[i] = lines[i][:last_pos] + lines[i][last_pos+1:]
+                        removed += 1
+                if removed >= excess:
+                    break
+            code = '\n'.join(lines)
+        elif brace_diff > 0:
+            excess = brace_diff
+            logger.warning(f"Adding {excess} closing braces at end")
+            lines = code.rstrip().split('\n')
+            for i in range(len(lines) - 1, -1, -1):
+                if lines[i].strip():
+                    lines[i] = lines[i] + '}' * excess
+                    break
+            code = '\n'.join(lines)
+        
+        # Verify the fix worked
+        new_paren_diff = code.count('(') - code.count(')')
+        new_bracket_diff = code.count('[') - code.count(']')
+        new_brace_diff = code.count('{') - code.count('}')
+        
+        if new_paren_diff == 0 and new_bracket_diff == 0 and new_brace_diff == 0:
+            logger.info("✓ Bracket balancing successful")
+        else:
+            logger.warning(f"Bracket balancing incomplete: parens={new_paren_diff:+d}, brackets={new_bracket_diff:+d}, braces={new_brace_diff:+d}")
         
         return code
     
