@@ -858,11 +858,38 @@ ANIMATION QUALITY GUIDELINES (FOR BEST RESULTS):
 ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
 Timing and Pacing:
 ✓ Use run_time parameter for control: run_time=2 (seconds)
-✓ Use rate_func for smooth motion (import first!):
-  from manim.utils.rate_functions import smooth
-  self.play(animation, rate_func=smooth)
 ✓ Use lag_ratio for sequential effects:
   self.play(Create(group), lag_ratio=0.1)
+
+RATE FUNCTIONS (CRITICAL - USE ONLY THESE EXACT NAMES):
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+BUILT-IN (no import needed, available from 'from manim import *'):
+✓ smooth - Best for most animations (recommended default)
+✓ linear - Constant speed, no easing
+✓ rush_into - Fast start, slow end
+✓ rush_from - Slow start, fast end
+✓ there_and_back - Goes forward then returns
+✓ wiggle - Wiggling effect
+
+REQUIRES IMPORT (must add: from manim.utils.rate_functions import X):
+✓ ease_out_sine, ease_in_sine, ease_in_out_sine
+✓ ease_out_cubic, ease_in_cubic, ease_in_out_cubic
+✓ ease_out_quad, ease_in_quad, ease_in_out_quad
+
+⚠️ INVALID RATE FUNCTION NAMES (DO NOT USE - WILL CRASH):
+✗ out_sine → Use ease_out_sine instead
+✗ in_sine → Use ease_in_sine instead  
+✗ out_cubic → Use ease_out_cubic instead
+✗ in_cubic → Use ease_in_cubic instead
+✗ Any name without 'ease_' prefix for sine/cubic/quad functions
+
+EXAMPLE (correct usage):
+  # Option 1: Use built-in (recommended)
+  self.play(obj.animate.shift(RIGHT*2), rate_func=smooth, run_time=2)
+  
+  # Option 2: Use ease_* with import
+  from manim.utils.rate_functions import ease_out_sine
+  self.play(obj.animate.shift(RIGHT*2), rate_func=ease_out_sine, run_time=2)
 
 Animation Selection:
 ✓ Write() - For text and equations appearing
@@ -1339,21 +1366,113 @@ REMEMBER: First character = 'f', First line = "from manim import *"
         code = re.sub(r'MathTex\("([^"\n]+)"(?=[,)])', safe_latex_to_raw, code)
         code = re.sub(r"MathTex\('([^'\n]+)'(?=[,)])", lambda m: f"MathTex(r'{m.group(1)}'", code)
         
-        # Fix 1: Add missing rate function imports
-        # Check if code uses ease_* rate functions
-        needs_rate_funcs = bool(re.search(r'rate_func\s*=\s*ease_\w+', code))
+        # Fix 1: Fix invalid rate functions and add missing imports
+        # Mapping of invalid/hallucinated rate function names to valid Manim equivalents
+        INVALID_RATE_FUNC_MAPPINGS = {
+            # Shorthand sine functions (missing 'ease_' prefix)
+            'out_sine': 'ease_out_sine',
+            'in_sine': 'ease_in_sine',
+            'in_out_sine': 'ease_in_out_sine',
+            # Shorthand cubic functions
+            'out_cubic': 'ease_out_cubic',
+            'in_cubic': 'ease_in_cubic',
+            'in_out_cubic': 'ease_in_out_cubic',
+            # Shorthand quad functions
+            'out_quad': 'ease_out_quad',
+            'in_quad': 'ease_in_quad',
+            'in_out_quad': 'ease_in_out_quad',
+            # Shorthand quart functions
+            'out_quart': 'ease_out_quart',
+            'in_quart': 'ease_in_quart',
+            'in_out_quart': 'ease_in_out_quart',
+            # Shorthand quint functions
+            'out_quint': 'ease_out_quint',
+            'in_quint': 'ease_in_quint',
+            'in_out_quint': 'ease_in_out_quint',
+            # Shorthand expo functions
+            'out_expo': 'ease_out_expo',
+            'in_expo': 'ease_in_expo',
+            'in_out_expo': 'ease_in_out_expo',
+            # Shorthand circ functions
+            'out_circ': 'ease_out_circ',
+            'in_circ': 'ease_in_circ',
+            'in_out_circ': 'ease_in_out_circ',
+            # Shorthand back functions
+            'out_back': 'ease_out_back',
+            'in_back': 'ease_in_back',
+            'in_out_back': 'ease_in_out_back',
+            # Shorthand bounce functions
+            'out_bounce': 'ease_out_bounce',
+            'in_bounce': 'ease_in_bounce',
+            'in_out_bounce': 'ease_in_out_bounce',
+            # Shorthand elastic functions
+            'out_elastic': 'ease_out_elastic',
+            'in_elastic': 'ease_in_elastic',
+            'in_out_elastic': 'ease_in_out_elastic',
+            # Common misspellings / alternative names
+            'ease_out': 'ease_out_cubic',
+            'ease_in': 'ease_in_cubic',
+            'ease_in_out': 'ease_in_out_cubic',
+            'easeOut': 'ease_out_cubic',
+            'easeIn': 'ease_in_cubic',
+            'easeInOut': 'ease_in_out_cubic',
+            'sine': 'ease_in_out_sine',
+            'cubic': 'ease_in_out_cubic',
+            'quad': 'ease_in_out_quad',
+        }
         
-        if needs_rate_funcs and 'from manim.utils.rate_functions import' not in code:
-            # Extract which rate functions are used
-            rate_funcs = set(re.findall(r'rate_func\s*=\s*(ease_\w+)', code))
+        # Valid rate functions that are available from 'from manim import *'
+        BUILTIN_RATE_FUNCS = {'smooth', 'linear', 'rush_into', 'rush_from', 
+                              'there_and_back', 'there_and_back_with_pause',
+                              'running_start', 'wiggle', 'lingering', 'not_quite_there',
+                              'double_smooth', 'exponential_decay'}
+        
+        # Valid rate functions that need explicit import
+        IMPORTABLE_RATE_FUNCS = {
+            'ease_in_sine', 'ease_out_sine', 'ease_in_out_sine',
+            'ease_in_cubic', 'ease_out_cubic', 'ease_in_out_cubic',
+            'ease_in_quad', 'ease_out_quad', 'ease_in_out_quad',
+            'ease_in_quart', 'ease_out_quart', 'ease_in_out_quart',
+            'ease_in_quint', 'ease_out_quint', 'ease_in_out_quint',
+            'ease_in_expo', 'ease_out_expo', 'ease_in_out_expo',
+            'ease_in_circ', 'ease_out_circ', 'ease_in_out_circ',
+            'ease_in_back', 'ease_out_back', 'ease_in_out_back',
+            'ease_in_bounce', 'ease_out_bounce', 'ease_in_out_bounce',
+            'ease_in_elastic', 'ease_out_elastic', 'ease_in_out_elastic',
+        }
+        
+        # Step 1: Find all rate_func usages
+        rate_func_pattern = r'rate_func\s*=\s*([a-zA-Z_][a-zA-Z0-9_]*)'
+        rate_func_matches = re.findall(rate_func_pattern, code)
+        
+        funcs_to_import = set()
+        
+        for func_name in rate_func_matches:
+            # Check if it's an invalid/hallucinated name that needs mapping
+            if func_name in INVALID_RATE_FUNC_MAPPINGS:
+                correct_name = INVALID_RATE_FUNC_MAPPINGS[func_name]
+                logger.warning(f"Fixing invalid rate function: {func_name} → {correct_name}")
+                pattern = r'rate_func\s*=\s*' + re.escape(func_name) + r'\b'
+                code = re.sub(pattern, f'rate_func={correct_name}', code)
+                func_name = correct_name  # Update for import check
             
-            if rate_funcs:
-                # Add import statement after main manim import
-                import_statement = f"from manim.utils.rate_functions import {', '.join(sorted(rate_funcs))}"
-                code = code.replace(
-                    'from manim import *',
-                    f'from manim import *\n{import_statement}'
-                )
+            # Check if we need to import this function
+            if func_name in IMPORTABLE_RATE_FUNCS:
+                funcs_to_import.add(func_name)
+            elif func_name not in BUILTIN_RATE_FUNCS and func_name not in IMPORTABLE_RATE_FUNCS:
+                # Unknown rate function - replace with safe default 'smooth'
+                logger.warning(f"Unknown rate function '{func_name}' - replacing with 'smooth'")
+                pattern = r'rate_func\s*=\s*' + re.escape(func_name) + r'\b'
+                code = re.sub(pattern, 'rate_func=smooth', code)
+        
+        # Step 2: Add import statement for any ease_* functions
+        if funcs_to_import and 'from manim.utils.rate_functions import' not in code:
+            import_statement = f"from manim.utils.rate_functions import {', '.join(sorted(funcs_to_import))}"
+            code = code.replace(
+                'from manim import *',
+                f'from manim import *\n{import_statement}'
+            )
+            logger.info(f"Added rate function imports: {funcs_to_import}")
         
         # Fix 2: Cap font sizes to prevent overflow (MORE CONSERVATIVE)
         # Replace any font_size > 30 with 28 (stricter for better layout)
