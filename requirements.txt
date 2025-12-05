@@ -3,6 +3,11 @@ uvicorn[standard]
 python-dotenv
 google-generativeai
 pillow
-pydantic
+pydantic[email]
 python-multipart
 aiofiles
+httpx
+PyJWT
+google-cloud-firestore
+firebase-admin
+bcrypt

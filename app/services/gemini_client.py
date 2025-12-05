@@ -28,19 +28,19 @@ class GeminiClient:
         safety_settings = [
             {
                 "category": "HARM_CATEGORY_HARASSMENT",
-                "threshold": "BLOCK_NONE"
+                "threshold": "BLOCK_ONLY_HIGH"
             },
             {
                 "category": "HARM_CATEGORY_HATE_SPEECH",
-                "threshold": "BLOCK_NONE"
+                "threshold": "BLOCK_ONLY_HIGH"
             },
             {
                 "category": "HARM_CATEGORY_SEXUALLY_EXPLICIT",
-                "threshold": "BLOCK_NONE"
+                "threshold": "BLOCK_ONLY_HIGH"
             },
             {
                 "category": "HARM_CATEGORY_DANGEROUS_CONTENT",
-                "threshold": "BLOCK_NONE"
+                "threshold": "BLOCK_ONLY_HIGH"
             },
         ]
         
@@ -196,6 +196,20 @@ Generate the code now:"""
                 
                 raise ValueError("Generated code failed validation")
             
+            # STEP 4: Check complexity (warn but don't fail - try to simplify)
+            is_acceptable, complexity_warning = self._check_complexity(code)
+            if not is_acceptable:
+                logger.warning(f"Code complexity warning: {complexity_warning}")
+                # Try to simplify the code
+                code = self._simplify_code(code)
+                # Re-check after simplification
+                is_acceptable_after, _ = self._check_complexity(code)
+                if not is_acceptable_after:
+                    logger.warning("Code still complex after simplification - proceeding anyway")
+            
+            # STEP 5: Reject obviously dangerous code before execution
+            self._reject_dangerous_code(code)
+
             return code
             
         except Exception as e:
@@ -295,10 +309,40 @@ Quality Guidelines:
 
 USER'S QUESTION: {question}
 
-CODE LENGTH AND COMPLETENESS (CRITICAL):
+⚠️⚠️⚠️ CODE LENGTH LIMITS (HARD CONSTRAINT - VIOLATION = REJECTION) ⚠️⚠️⚠️
 ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
-• Keep code CONCISE but COMPLETE - aim for 50-80 lines maximum
-• For complex problems: Focus on KEY steps, combine similar equations
+MAXIMUM CODE LENGTH: 60-80 lines, 4000 characters ABSOLUTE MAX
+If your code exceeds these limits, IT WILL BE REJECTED and you must regenerate.
+
+WHY THIS MATTERS: Manim rendering takes ~2 seconds per text element.
+- 20 text elements = 40 seconds render time
+- 40 text elements = 80 seconds render time (TOO SLOW!)
+- Videos must render in under 60 seconds
+
+MANDATORY SIMPLIFICATION RULES:
+1. MAX 15-20 text elements (Text, MathTex, Tex combined) in entire animation
+2. MAX 4-5 major sections (Title → Setup → Solution → Answer)
+3. COMBINE equations: Show 2-3 key steps, not every intermediate step
+4. For complex problems: Show ONLY the most important transformations
+5. Use Transform() to replace text instead of adding new elements
+6. SKIP verbose explanations - let equations speak
+
+Example - WRONG (too verbose, 30+ elements):
+  Step 1: Show "Given: m, v, L"
+  Step 2: Show "Find: ω"
+  Step 3: Show "Conservation of momentum"
+  Step 4: Show "mv·L/2 = (I_rod + I_particle)·ω"
+  Step 5: Show "I_rod = ML²/3"
+  Step 6: Show "I_particle = m(L/2)²"
+  ... 10 more steps ...
+
+Example - CORRECT (concise, 12 elements):
+  Section 1: Title + diagram (3 elements)
+  Section 2: Key equation + substitution (3 elements) 
+  Section 3: Final calculation (3 elements)
+  Section 4: Boxed answer (3 elements)
+
+CODE COMPLETENESS RULES:
 • ENSURE ALL PARENTHESES ARE CLOSED: Count your ( and ) - must be equal!
 • ENSURE ALL BRACKETS ARE CLOSED: Count your [ and ] - must be equal!
 • Double-check the last line is complete (not cut off mid-statement)
@@ -1148,6 +1192,34 @@ REMEMBER: First character = 'f', First line = "from manim import *"
             logger.warning("Replacing deprecated ShowCreation with Create")
             code = code.replace('ShowCreation', 'Create')
         
+        # CRITICAL FIX: Replace Create() with FadeIn() for non-VMobject types
+        # Create() only works on VMobjects with stroke (Line, Circle, etc.)
+        # For ParametricFunction, Spring, Surface, etc., use FadeIn instead
+        # Common problematic patterns:
+        non_create_compatible = [
+            'spring', 'Spring', 'helix', 'Helix',
+            'surface', 'Surface', 'ParametricSurface',
+            'parametric', 'Parametric', 'ParametricFunction',
+            'mesh', 'Mesh', 'ThreeDVMobject'
+        ]
+        
+        for obj_type in non_create_compatible:
+            # Find patterns like: spring_var = ... followed by Create(spring_var)
+            # This is tricky, so we'll do a simpler approach:
+            # If the variable name contains "spring", "helix", etc., replace Create with FadeIn
+            pattern = rf'Create\s*\(\s*(\w*{obj_type}\w*)\s*\)'
+            if re.search(pattern, code, re.IGNORECASE):
+                logger.warning(f"Replacing Create() with FadeIn() for {obj_type}-like object")
+                code = re.sub(pattern, r'FadeIn(\1)', code, flags=re.IGNORECASE)
+        
+        # Also catch explicit class instantiation inside Create
+        # e.g., Create(ParametricFunction(...)) → FadeIn(ParametricFunction(...))
+        problematic_classes = ['ParametricFunction', 'ParametricSurface', 'Surface', 'Sphere', 'Torus', 'Cylinder', 'Cone', 'Prism']
+        for cls in problematic_classes:
+            if f'Create({cls}' in code:
+                logger.warning(f"Replacing Create({cls}...) with FadeIn({cls}...)")
+                code = re.sub(rf'Create\s*\(\s*({cls}\s*\([^)]+\))\s*\)', r'FadeIn(\1)', code)
+        
         # Fix: Title/Text with LaTeX content (like \lambda, \alpha, etc.)
         # Title("Solve for \lambda") fails because \l is invalid escape
         # Convert to raw string or use proper escaping
@@ -1662,6 +1734,123 @@ REMEMBER: First character = 'f', First line = "from manim import *"
         
         logger.info("✓ Completeness check PASSED")
         return True, ""
+    
+    def _check_complexity(self, code: str) -> tuple[bool, str]:
+        """
+        Check if code is within acceptable complexity limits for fast rendering.
+        Returns: (is_acceptable, warning_message)
+        
+        Limits:
+        - Max 6000 characters (soft limit, warn but allow)
+        - Max 25 text elements (Text, MathTex, Tex)
+        - Max 100 lines
+        """
+        import logging
+        logger = logging.getLogger(__name__)
+        
+        warnings = []
+        
+        # Check character count
+        char_count = len(code)
+        if char_count > 8000:
+            msg = f"Code too long ({char_count} chars, max 8000) - will likely timeout"
+            logger.warning(f"⚠ Complexity warning: {msg}")
+            warnings.append(msg)
+        elif char_count > 6000:
+            logger.info(f"ℹ Code length: {char_count} chars (acceptable but long)")
+        
+        # Check line count
+        line_count = code.count('\n') + 1
+        if line_count > 120:
+            msg = f"Too many lines ({line_count}, max 120)"
+            logger.warning(f"⚠ Complexity warning: {msg}")
+            warnings.append(msg)
+        
+        # Count text elements (these are expensive to render)
+        text_patterns = [
+            r'Text\s*\(',
+            r'MathTex\s*\(',
+            r'Tex\s*\(',
+            r'Title\s*\(',
+        ]
+        text_count = 0
+        for pattern in text_patterns:
+            text_count += len(re.findall(pattern, code))
+        
+        if text_count > 30:
+            msg = f"Too many text elements ({text_count}, max 30) - will render slowly"
+            logger.warning(f"⚠ Complexity warning: {msg}")
+            warnings.append(msg)
+        elif text_count > 20:
+            logger.info(f"ℹ Text element count: {text_count} (moderate)")
+        
+        # Log summary
+        logger.info(f"Complexity check: {char_count} chars, {line_count} lines, {text_count} text elements")
+        
+        if warnings:
+            return False, "; ".join(warnings)
+        
+        logger.info("✓ Complexity check PASSED")
+        return True, ""
+    
+    def _simplify_code(self, code: str) -> str:
+        """
+        Attempt to simplify overly complex code by reducing redundant elements.
+        This is a best-effort simplification for code that's too complex.
+        """
+        import logging
+        logger = logging.getLogger(__name__)
+        
+        original_len = len(code)
+        
+        # Remove excessive wait() calls (keep important ones)
+        # Replace multiple consecutive waits with single wait
+        code = re.sub(r'(self\.wait\s*\([^)]*\)\s*\n\s*){2,}', 'self.wait(1)\n        ', code)
+        
+        # Remove redundant comments (keep section markers)
+        lines = code.split('\n')
+        cleaned_lines = []
+        for line in lines:
+            stripped = line.strip()
+            # Keep section markers (lines with ═══ or ---) and important comments
+            if stripped.startswith('#'):
+                if '═' in stripped or '---' in stripped or 'SECTION' in stripped.upper():
+                    cleaned_lines.append(line)
+                # Skip other comments
+                continue
+            cleaned_lines.append(line)
+        code = '\n'.join(cleaned_lines)
+        
+        new_len = len(code)
+        if new_len < original_len:
+            logger.info(f"Simplified code: {original_len} → {new_len} chars ({original_len - new_len} removed)")
+        
+        return code
+
+    def _reject_dangerous_code(self, code: str) -> None:
+        """
+        Block obviously dangerous code patterns before execution.
+        
+        This is a lightweight allowlist check; full isolation should still be used.
+        """
+        banned_patterns = [
+            r"\bimport\s+os\b",
+            r"\bimport\s+sys\b",
+            r"\bimport\s+subprocess\b",
+            r"\bsubprocess\.",
+            r"\bimport\s+shutil\b",
+            r"\bimport\s+socket\b",
+            r"\bimport\s+requests\b",
+            r"\bimport\s+httpx\b",
+            r"\bimport\s+urllib\b",
+            r"\bopen\s*\(",
+            r"\beval\s*\(",
+            r"\bexec\s*\(",
+            r"__import__",
+        ]
+        for pattern in banned_patterns:
+            if re.search(pattern, code):
+                raise ValueError("Generated code contains disallowed operations and was rejected")
     
     def _validate_code(self, code: str) -> bool:
         """Flexible validation of generated code with detailed logging"""

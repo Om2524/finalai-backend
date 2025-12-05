@@ -1,0 +1,12 @@
+GEMINI_API_KEY: AIzaSyARNJXeOOqQ5JBmQR8W3BRBPk2vuuiZsgo
+JWT_SECRET: 90a6fceea78edac3997bec1744dc9f5255cb344fbfb57fa439b7656631ef919b
+ADMIN_EMAIL: ompatil2524@gmail.com
+ADMIN_PASSWORD: admin2524
+GCP_PROJECT_ID: gen-lang-client-0839252651
+CORS_ORIGINS: "https://ask-doubt-backend-53864601714.us-central1.run.app,https://beorigin.lovable.app,http://localhost:5173"
+VIDEO_STORAGE_PATH: ./videos
+TEMP_CODE_PATH: ./temp
+MANIM_QUALITY: qh
+MANIM_TIMEOUT: "180"
+MAX_IMAGE_SIZE_MB: "10"
+DEFAULT_ASK_DOUBT_CREDITS: "3"
