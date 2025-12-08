@@ -177,6 +177,24 @@ Generate the code now:"""
                 if orig_syntax_valid:
                     logger.info("Original code has valid syntax - using original")
                     code = original_code
+                    
+                    # IMPORTANT: Original code might use ease_* rate functions without import
+                    # Since we're falling back to original, replace them with safe 'smooth'
+                    ease_funcs = ['ease_in_quad', 'ease_out_quad', 'ease_in_out_quad',
+                                  'ease_in_sine', 'ease_out_sine', 'ease_in_out_sine',
+                                  'ease_in_cubic', 'ease_out_cubic', 'ease_in_out_cubic',
+                                  'ease_in_quart', 'ease_out_quart', 'ease_in_out_quart',
+                                  'ease_in_quint', 'ease_out_quint', 'ease_in_out_quint',
+                                  'ease_in_expo', 'ease_out_expo', 'ease_in_out_expo',
+                                  'ease_in_circ', 'ease_out_circ', 'ease_in_out_circ',
+                                  'ease_in_back', 'ease_out_back', 'ease_in_out_back',
+                                  'ease_in_bounce', 'ease_out_bounce', 'ease_in_out_bounce',
+                                  'ease_in_elastic', 'ease_out_elastic', 'ease_in_out_elastic']
+                    
+                    for func in ease_funcs:
+                        if f'rate_func={func}' in code or f'rate_func= {func}' in code:
+                            logger.warning(f"Replacing {func} with 'smooth' (no import available in fallback)")
+                            code = re.sub(rf'rate_func\s*=\s*{func}\b', 'rate_func=smooth', code)
                 else:
                     # Both have issues - save for debugging and raise error
                     from pathlib import Path
@@ -207,7 +225,10 @@ Generate the code now:"""
                 if not is_acceptable_after:
                     logger.warning("Code still complex after simplification - proceeding anyway")
             
-            # STEP 5: Reject obviously dangerous code before execution
+            # STEP 5: Final safety check for runtime-crash patterns
+            code = self._fix_runtime_crash_patterns(code)
+            
+            # STEP 6: Reject obviously dangerous code before execution
             self._reject_dangerous_code(code)
 
             return code
@@ -360,6 +381,47 @@ CRITICAL VISUALIZATION REQUIREMENTS:
    - If a collision happens, visually show the objects touching and then reacting (bouncing/stopping).
 3. SYNC MATH WITH ACTION: Show the relevant equation *after* or *during* the visual event. (e.g., Show "Conservation of Momentum" text right after the collision animation).
 
+STRICT RENDERING SPEED OPTIMIZATION (CRITICAL - 5x FASTER VIDEOS):
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+1. SPEED OVER STYLE: NEVER use 'Write()', 'Create()', or 'ShowCreation()' for Text, MathTex, or Tex objects. These render stroke-by-stroke and are 5x SLOWER.
+2. MANDATORY FAST ANIMATION: ALWAYS use 'FadeIn(text, run_time=0.5)' for all text and equations.
+3. WAIT TIMES: Never use 'self.wait(2)' or longer. Use 'self.wait(1)' for major steps and 'self.wait(0.5)' for minor steps.
+4. For shapes (Circle, Rectangle, Line, Arrow), use Create() with run_time=0.5 - shapes are fast.
+
+EXAMPLE - SLOW (DON'T DO THIS):
+✗ self.play(Write(title))  # 2-3 seconds to render stroke-by-stroke
+✗ self.play(Create(equation))  # Even slower for complex LaTeX
+✗ self.wait(3)  # Wastes render time
+
+EXAMPLE - FAST (ALWAYS DO THIS):
+✓ self.play(FadeIn(title, run_time=0.5))  # Instant fade, 0.5 second
+✓ self.play(FadeIn(equation, run_time=0.5))  # Fast for any complexity
+✓ self.play(Create(circle), run_time=0.5)  # Shapes are fine with Create
+✓ self.wait(1)  # Quick pause
+
+STRICT LAYOUT & ALIGNMENT RULES (PREVENTS OVERLAP - CRITICAL):
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+1. RELATIVE POSITIONING ONLY: Do not guess absolute coordinates (avoid `move_to(UP*2)`, `shift(LEFT*5)`).
+2. ALWAYS use relative references:
+   - `title.to_edge(UP, buff=0.5)`
+   - `diagram.next_to(title, DOWN, buff=0.5)`
+   - `equation.next_to(diagram, DOWN, buff=0.5)`
+3. PREVENT TEXT OVERLAP: Before adding new text to the same zone (UP, CENTER, DOWN), you MUST FadeOut the previous text first.
+4. SCREEN BOUNDARIES: Keep all content within x=[-6, 6] and y=[-3.5, 3.5].
+5. ONE ELEMENT PER ZONE: Only one title at to_edge(UP), only one equation at ORIGIN at a time.
+
+PHYSICS VISUALIZATION STANDARDS (MANDATORY COLOR CODING):
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+1. VECTORS: Always use `Arrow()` for force and velocity vectors.
+2. MANDATORY COLOR CODE:
+   - Force Vectors = RED (e.g., `Arrow(..., color=RED)`)
+   - Velocity/Motion = GREEN (e.g., `Arrow(..., color=GREEN)`)
+   - Objects/Masses = BLUE (e.g., `Circle(..., color=BLUE)`)
+   - Labels/Text = WHITE (default)
+   - Highlighted results = YELLOW or GOLD
+   - Surfaces/Grounds = GRAY
+3. CONSISTENT STYLING: Use stroke_width=3 for vectors, stroke_width=2 for shapes.
+
 ADVANCED ANIMATION TECHNIQUES (FOR PROFESSIONAL QUALITY):
 ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
 Smooth Motion (Use rate functions):
@@ -411,11 +473,15 @@ RULE 1: MAXIMUM 3-4 TEXT ELEMENTS ON SCREEN AT ANY TIME
 
 RULE 2: NUCLEAR CLEAR BETWEEN MAJOR SECTIONS
 Every solution has sections (Problem → Setup → Solution → Answer).
-Between EACH major section, use the nuclear clear:
+Between EACH major section, use the SAFE nuclear clear:
 ```python
-self.play(*[FadeOut(mob) for mob in self.mobjects])  # ← CLEARS EVERYTHING
+# SAFE version - won't crash if screen is already empty:
+if self.mobjects:
+    self.play(*[FadeOut(mob) for mob in self.mobjects])
 self.wait(0.3)
 ```
+⚠️ NEVER use bare: self.play(*[FadeOut(mob) for mob in self.mobjects])
+   This CRASHES with "ValueError: Called Scene.play with no animations" if screen is empty!
 
 RULE 3: NEVER STACK TEXT AT SAME Y-POSITION
 - If text1 is at to_edge(UP), text2 CANNOT use to_edge(UP) until text1 is gone
@@ -463,7 +529,8 @@ def construct(self):
     diagram = VGroup(...).move_to(ORIGIN)
     self.play(Write(setup_title), Create(diagram))
     self.wait(2)
-    self.play(*[FadeOut(mob) for mob in self.mobjects])  # ← NUCLEAR CLEAR!
+    if self.mobjects:
+        self.play(*[FadeOut(mob) for mob in self.mobjects])  # ← SAFE NUCLEAR CLEAR!
     
     # ══════════ SECTION 3: SOLUTION (15 sec) ══════════
     # Show ONE equation at a time, then clear or transform
@@ -485,7 +552,7 @@ def construct(self):
     self.wait(3)
 ```
 
-RULE 6: FORBIDDEN PATTERNS (NEVER DO THESE):
+RULE 6: FORBIDDEN PATTERNS (NEVER DO THESE - WILL CRASH):
 ```python
 # FORBIDDEN 1: Multiple to_edge(UP) without clear
 text1.to_edge(UP)
@@ -502,6 +569,18 @@ self.play(Write(b))
 self.play(Write(c))
 self.play(Write(d))
 self.play(Write(e))  # ← FORBIDDEN! Too many elements!
+
+# FORBIDDEN 4: Using .aligned_edge() as a METHOD (CRASHES!)
+title.to_edge(UP).aligned_edge(LEFT)  # ← CRASHES! AttributeError!
+text.move_to(ORIGIN).aligned_edge(LEFT)  # ← CRASHES!
+# CORRECT way - use aligned_edge as PARAMETER:
+text.next_to(other_obj, DOWN, aligned_edge=LEFT)  # ← CORRECT!
+VGroup(a, b).arrange(DOWN, aligned_edge=LEFT)  # ← CORRECT!
+
+# FORBIDDEN 5: Incomplete method calls (missing parentheses)
+Arrow(start=obj.get_bottom(, end=other.get_top())  # ← SYNTAX ERROR!
+# CORRECT:
+Arrow(start=obj.get_bottom(), end=other.get_top())  # ← CORRECT!
 ```
 
 FONT SIZE LIMITS (STRICTLY ENFORCED):
@@ -550,6 +629,17 @@ CRITICAL RULES:
 ✗ NEVER let equations extend beyond frame (use scale_to_fit_width)
 ✗ NEVER position text at same location as existing text
 ✗ NEVER use font_size > 28
+✗ NEVER put font_size inside .next_to(), .move_to(), .shift(), .to_edge() - font_size ONLY goes in Text(), MathTex(), Tex() constructors!
+✗ NEVER use opacity/fill_opacity values outside 0-1 range! (e.g., -0.25 or 1.5 will CRASH)
+
+CORRECT: text = Text("Hello", font_size=24).next_to(obj, DOWN)
+WRONG:   text = Text("Hello").next_to(obj, DOWN, font_size=24)  # TypeError!
+
+OPACITY RULES (MUST BE 0 to 1):
+✓ fill_opacity=0.5   # 50% opacity - VALID
+✓ stroke_opacity=1   # Fully opaque - VALID
+✗ fill_opacity=-0.25 # INVALID - will crash with "Alpha not between 0 and 1"
+✗ opacity=1.5        # INVALID - must be <= 1
 
 CONTENT DENSITY MANAGEMENT:
 • Maximum 4-5 text elements visible at any time
@@ -618,6 +708,21 @@ GEOMETRY & STYLING RULES (CRITICAL - PREVENTS CRASHES):
    ✗ arrow_size - DOES NOT EXIST (use tip_length)
    ✗ dashes - DOES NOT EXIST
    ✗ linewidth - use 'stroke_width' instead
+   ✗ angle= in Circle() - Circle doesn't accept angle parameter
+
+⚠️ NON-EXISTENT MANIM CLASSES (WILL CRASH WITH NameError):
+   ✗ DashedCircle - DOES NOT EXIST! Use: DashedVMobject(Circle(...))
+   ✗ DashedArc - DOES NOT EXIST! Use: DashedVMobject(Arc(...))
+   ✗ DashedRectangle - DOES NOT EXIST! Use: DashedVMobject(Rectangle(...))
+   ✗ TransformReplacement - DOES NOT EXIST! Use: ReplacementTransform
+   ✗ Spring - DOES NOT EXIST (unless you define it yourself)
+   ✗ Coil - DOES NOT EXIST (unless you define it yourself)
+
+CORRECT DASHED SHAPES:
+   ✓ DashedVMobject(Circle(radius=1))  # Dashed circle
+   ✓ DashedVMobject(Arc(radius=1, angle=PI))  # Dashed arc
+   ✓ DashedLine(start, end)  # This one exists!
+   ✓ DashedVMobject(Rectangle())  # Dashed rectangle
 
 4. CORRECT EXAMPLES:
    ✓ Line(A, B, color=GRAY)  # Solid line
@@ -636,8 +741,9 @@ class PhysicsSolution(Scene):
         self.play(Write(title))
         self.wait(2)
         
-        # *** NUCLEAR CLEAR before Section 2 ***
-        self.play(*[FadeOut(mob) for mob in self.mobjects])
+        # *** SAFE NUCLEAR CLEAR before Section 2 ***
+        if self.mobjects:
+            self.play(*[FadeOut(mob) for mob in self.mobjects])
         
         # ═══════════════ SECTION 2: SETUP/DIAGRAM (10 seconds) ═══════════════
         # Maximum 4 elements: section_title + diagram + 2 labels
@@ -649,8 +755,9 @@ class PhysicsSolution(Scene):
         self.play(Create(diagram), Write(label))
         self.wait(2)
         
-        # *** NUCLEAR CLEAR before Section 3 ***
-        self.play(*[FadeOut(mob) for mob in self.mobjects])
+        # *** SAFE NUCLEAR CLEAR before Section 3 ***
+        if self.mobjects:
+            self.play(*[FadeOut(mob) for mob in self.mobjects])
         
         # ═══════════════ SECTION 3: SOLUTION STEPS (15 seconds) ═══════════════
         # Show ONE step at a time using Transform (not Write!)
@@ -672,8 +779,9 @@ class PhysicsSolution(Scene):
         self.play(Transform(eq1, eq3))
         self.wait(1)
         
-        # *** NUCLEAR CLEAR before Final Answer ***
-        self.play(*[FadeOut(mob) for mob in self.mobjects])
+        # *** SAFE NUCLEAR CLEAR before Final Answer ***
+        if self.mobjects:
+            self.play(*[FadeOut(mob) for mob in self.mobjects])
         
         # ═══════════════ SECTION 4: FINAL ANSWER (5 seconds) ═══════════════
         answer_title = Text("Answer", font_size=24, color=GREEN).to_edge(UP)
@@ -1346,12 +1454,17 @@ REMEMBER: First character = 'f', First line = "from manim import *"
                 else:
                     code = re.sub(rf'\.{method}\([^)]*\)', '', code)
         
-        # CRITICAL FIX: Remove invalid .aligned_edge() method chain
-        # Manim doesn't have .aligned_edge() method - it's a parameter for .next_to() or .arrange()
-        # Pattern: .move_to(...).aligned_edge(LEFT) → .move_to(...)
-        if '.aligned_edge(' in code:
-            logger.warning("Removing invalid .aligned_edge() method chain")
-            code = re.sub(r'\.aligned_edge\s*\(\s*\w+\s*\)', '', code)
+        # CRITICAL FIX: Remove ALL forms of invalid .aligned_edge() usage
+        # Manim doesn't have .aligned_edge() method - it's a PARAMETER for .next_to() or .arrange()
+        # Gemini often generates: text.to_edge(UP).aligned_edge(LEFT) which crashes
+        if 'aligned_edge' in code:
+            logger.warning("Removing invalid .aligned_edge() usage (method form)")
+            # Pattern 1: .aligned_edge(LEFT) as method call -> remove entirely
+            code = re.sub(r'\.aligned_edge\s*\(\s*[A-Z_]+\s*\)', '', code)
+            # Pattern 2: aligned_edge as standalone call (rare but possible)
+            code = re.sub(r'\baligned_edge\s*\(\s*[A-Z_]+\s*\)', '', code)
+            # Pattern 3: If someone tries obj.aligned_edge = LEFT (attribute assignment)
+            code = re.sub(r'\.\s*aligned_edge\s*=\s*[A-Z_]+', '', code)
         
         # Fix: Fix LaTeX escape sequences (SAFE VERSION - only simple single-line cases)
         def safe_latex_to_raw(match):
@@ -1365,6 +1478,33 @@ REMEMBER: First character = 'f', First line = "from manim import *"
         # Apply to simple MathTex only
         code = re.sub(r'MathTex\("([^"\n]+)"(?=[,)])', safe_latex_to_raw, code)
         code = re.sub(r"MathTex\('([^'\n]+)'(?=[,)])", lambda m: f"MathTex(r'{m.group(1)}'", code)
+        
+        # Fix common LaTeX errors that cause "latex error converting to dvi"
+        # 1. Unescaped special characters in MathTex
+        def fix_latex_special_chars(match):
+            """Fix unescaped special chars in LaTeX"""
+            prefix = match.group(1)  # MathTex( or Tex(
+            quote = match.group(2)   # r" or r' or " or '
+            content = match.group(3)
+            end_quote = match.group(4)
+            
+            # Fix common issues:
+            # - Unescaped % -> \%
+            # - Unescaped & -> \&  (but not \&)
+            # - Unescaped # -> \#
+            fixed = content
+            fixed = re.sub(r'(?<!\\)%', r'\\%', fixed)
+            fixed = re.sub(r'(?<!\\)&(?!amp;)', r'\\&', fixed)
+            fixed = re.sub(r'(?<!\\)#', r'\\#', fixed)
+            
+            return f'{prefix}{quote}{fixed}{end_quote}'
+        
+        # Apply LaTeX special char fixes
+        code = re.sub(
+            r'(MathTex\s*\(\s*|Tex\s*\(\s*)(r?["\'])([^"\']+)(["\'])',
+            fix_latex_special_chars,
+            code
+        )
         
         # Fix 1: Fix invalid rate functions and add missing imports
         # Mapping of invalid/hallucinated rate function names to valid Manim equivalents
@@ -1512,20 +1652,36 @@ REMEMBER: First character = 'f', First line = "from manim import *"
         
         # CRITICAL FIX: Replace unsafe nuclear clear with safe version
         # self.play(*[FadeOut(mob) for mob in self.mobjects]) will crash if screen is empty
-        # Replace with a safe version that checks for empty mobjects
+        # The crash is: ValueError: Called Scene.play with no animations
+        # 
+        # IMPORTANT: Ternary expressions DON'T WORK because self.play() gets called anyway
+        # We must use short-circuit evaluation: (condition and action)
+        # Python's `and` only evaluates the second part if the first is truthy
         unsafe_nuclear_clear = r'self\.play\s*\(\s*\*\s*\[\s*FadeOut\s*\(\s*mob\s*\)\s*for\s+mob\s+in\s+self\.mobjects\s*\]\s*\)'
-        safe_nuclear_clear = 'self.play(*[FadeOut(mob) for mob in self.mobjects]) if self.mobjects else None'
         
-        # But actually, the safest is to just use a helper check:
-        # Better approach: wrap in conditional
         if re.search(unsafe_nuclear_clear, code):
-            logger.warning("Fixing unsafe nuclear clear - adding mobjects check")
-            # Replace with if-guarded version
+            logger.warning("Fixing unsafe nuclear clear - using short-circuit evaluation")
+            # Use short-circuit: self.mobjects and self.play(...)
+            # This ONLY calls self.play() if self.mobjects is non-empty (truthy)
             code = re.sub(
                 unsafe_nuclear_clear,
-                'self.play(*[FadeOut(mob) for mob in self.mobjects]) if self.mobjects else self.wait(0.1)',
+                '(self.mobjects and self.play(*[FadeOut(mob) for mob in self.mobjects]))',
                 code
             )
+        
+        # Also fix any variations with extra whitespace or comments
+        unsafe_variations = [
+            r'self\.play\s*\(\s*\*\s*\[\s*FadeOut\s*\(\s*m\s*\)\s*for\s+m\s+in\s+self\.mobjects\s*\]\s*\)',  # 'm' instead of 'mob'
+            r'self\.play\s*\(\s*\*\s*\[\s*FadeOut\s*\(\s*obj\s*\)\s*for\s+obj\s+in\s+self\.mobjects\s*\]\s*\)',  # 'obj' instead of 'mob'
+        ]
+        for pattern in unsafe_variations:
+            if re.search(pattern, code):
+                logger.warning("Fixing unsafe nuclear clear variation")
+                code = re.sub(
+                    pattern,
+                    '(self.mobjects and self.play(*[FadeOut(mob) for mob in self.mobjects]))',
+                    code
+                )
         
         # Fix 5: Clean up excessive whitespace
         code = re.sub(r'\n{3,}', '\n\n', code)
@@ -1643,15 +1799,16 @@ REMEMBER: First character = 'f', First line = "from manim import *"
                 if 'FadeOut' in line or 'FadeOut(mob)' in line:
                     write_streak = 0
                 
-                # If we've had 5+ writes without a fadeout, inject a nuclear clear
+                # If we've had 5+ writes without a fadeout, inject a SAFE nuclear clear
                 if write_streak >= 5:
                     # Check if next line is already a FadeOut
                     next_line = lines[i+1] if i+1 < len(lines) else ""
                     if 'FadeOut' not in next_line and 'self.wait' in line:
                         indent = len(line) - len(line.lstrip())
-                        nuclear_clear = ' ' * indent + "self.play(*[FadeOut(mob) for mob in self.mobjects])  # Auto-injected clear"
+                        # Use safe version with short-circuit evaluation
+                        nuclear_clear = ' ' * indent + "(self.mobjects and self.play(*[FadeOut(mob) for mob in self.mobjects]))  # Auto-injected safe clear"
                         new_lines.append(nuclear_clear)
-                        logger.warning(f"Injected nuclear clear after line {i+1}")
+                        logger.warning(f"Injected safe nuclear clear after line {i+1}")
                         write_streak = 0
             
             code = '\n'.join(new_lines)
@@ -1671,9 +1828,58 @@ REMEMBER: First character = 'f', First line = "from manim import *"
                     logger.warning(f"Potential overlap: Multiple to_edge(UP) at lines {to_edge_up_lines[-1]+1} and {i+1} without FadeOut")
                 to_edge_up_lines.append(i)
         
+        # PERFORMANCE FIX: Aggressively reduce wait times to speed up rendering
+        # Wait times > 1 second add unnecessary frames and slow down videos
+        # Max wait should be 1 second for major steps, 0.5 for minor steps
+        if 'self.wait' in code:
+            logger.info("Aggressively optimizing wait times for faster rendering...")
+            # Reduce waits of 2+ seconds to 1 second max
+            code = re.sub(r'self\.wait\s*\(\s*([2-9]|[1-9]\d+)\s*\)', 'self.wait(1)', code)
+            # Also reduce float waits > 1.5 to 1
+            code = re.sub(r'self\.wait\s*\(\s*(1\.[5-9]|[2-9]\.\d+|[1-9]\d+\.\d+)\s*\)', 'self.wait(1)', code)
+            # Reduce 1.5 specifically
+            code = re.sub(r'self\.wait\s*\(\s*1\.5\s*\)', 'self.wait(1)', code)
+        
+        # SPEED FIX: Convert Write() to FadeIn() for text objects (5x faster rendering)
+        # Write() renders stroke-by-stroke which is extremely slow for text
+        # FadeIn() is instant and produces same visual result
+        if 'Write(' in code:
+            logger.info("Converting Write() to FadeIn() for faster text rendering...")
+            # Pattern: self.play(Write(text_var)) -> self.play(FadeIn(text_var, run_time=0.5))
+            # Also handle: self.play(Write(text_var), ...) with other animations
+            code = re.sub(
+                r'Write\s*\(\s*(\w+)\s*\)',
+                r'FadeIn(\1, run_time=0.5)',
+                code
+            )
+            # Handle Write with run_time parameter: Write(x, run_time=1) -> FadeIn(x, run_time=0.5)
+            code = re.sub(
+                r'Write\s*\(\s*(\w+)\s*,\s*run_time\s*=\s*[\d\.]+\s*\)',
+                r'FadeIn(\1, run_time=0.5)',
+                code
+            )
+        
+        # CRITICAL FIX: Fix incomplete method calls like obj.get_bottom(, end=...)
+        # Pattern: method_name(, -> method_name(),
+        incomplete_method_pattern = r'(\.\w+)\(\s*,'
+        if re.search(incomplete_method_pattern, code):
+            logger.warning("Fixing incomplete method calls (missing closing paren)")
+            code = re.sub(incomplete_method_pattern, r'\1(), ', code)
+        
+        # Also fix: method_name( , -> method_name(),
+        code = re.sub(r'(\.\w+)\(\s+,', r'\1(), ', code)
+        
         # CRITICAL FIX: Balance parentheses, brackets, and braces
         # This fixes truncated or malformed code from Gemini
         code = self._balance_brackets(code)
+        
+        # FINAL VALIDATION: Check syntax after all fixes
+        # If auto-fixes broke the code, log detailed error for debugging
+        final_valid, final_error = self._check_syntax(code)
+        if not final_valid:
+            logger.error(f"Code still has syntax errors after auto-fix: {final_error}")
+            logger.error("First 500 chars of problematic code:")
+            logger.error(code[:500])
         
         return code
     
@@ -1943,6 +2149,168 @@ REMEMBER: First character = 'f', First line = "from manim import *"
         new_len = len(code)
         if new_len < original_len:
             logger.info(f"Simplified code: {original_len} → {new_len} chars ({original_len - new_len} removed)")
+        
+        return code
+
+    def _fix_runtime_crash_patterns(self, code: str) -> str:
+        """
+        Final safety net to fix patterns that cause runtime crashes in Manim.
+        This catches anything that slipped through _fix_common_issues.
+        
+        Main pattern: self.play(*[FadeOut(mob) for mob in self.mobjects])
+        This crashes with "ValueError: Called Scene.play with no animations" when empty.
+        """
+        import logging
+        logger = logging.getLogger(__name__)
+        
+        # Pattern 1: Unguarded nuclear clear - various variable names
+        nuclear_clear_patterns = [
+            (r'self\.play\s*\(\s*\*\s*\[\s*FadeOut\s*\(\s*mob\s*\)\s*for\s+mob\s+in\s+self\.mobjects\s*\]\s*\)', 'mob'),
+            (r'self\.play\s*\(\s*\*\s*\[\s*FadeOut\s*\(\s*m\s*\)\s*for\s+m\s+in\s+self\.mobjects\s*\]\s*\)', 'm'),
+            (r'self\.play\s*\(\s*\*\s*\[\s*FadeOut\s*\(\s*obj\s*\)\s*for\s+obj\s+in\s+self\.mobjects\s*\]\s*\)', 'obj'),
+            (r'self\.play\s*\(\s*\*\s*\[\s*FadeOut\s*\(\s*x\s*\)\s*for\s+x\s+in\s+self\.mobjects\s*\]\s*\)', 'x'),
+        ]
+        
+        for pattern, var_name in nuclear_clear_patterns:
+            if re.search(pattern, code):
+                # Check if it's already guarded (has 'if self.mobjects' or 'self.mobjects and' before it)
+                guarded_pattern = rf'(?:if\s+self\.mobjects\s*:|self\.mobjects\s+and)\s*{pattern}'
+                if not re.search(guarded_pattern, code):
+                    logger.warning(f"FINAL SAFETY: Fixing unguarded nuclear clear (var={var_name})")
+                    code = re.sub(
+                        pattern,
+                        '(self.mobjects and self.play(*[FadeOut(mob) for mob in self.mobjects]))',
+                        code
+                    )
+        
+        # Pattern 2: self.play() with empty arguments (direct call)
+        empty_play = r'self\.play\s*\(\s*\)'
+        if re.search(empty_play, code):
+            logger.warning("FINAL SAFETY: Removing empty self.play() calls")
+            code = re.sub(empty_play, 'self.wait(0.1)', code)
+        
+        # Pattern 3: self.play(*[]) - empty list unpacking
+        empty_list_play = r'self\.play\s*\(\s*\*\s*\[\s*\]\s*\)'
+        if re.search(empty_list_play, code):
+            logger.warning("FINAL SAFETY: Removing self.play(*[]) calls")
+            code = re.sub(empty_list_play, 'self.wait(0.1)', code)
+        
+        # Pattern 4: font_size in next_to() - This is INVALID in Manim!
+        # next_to() only accepts: direction, buff, aligned_edge, submobject_to_align
+        # font_size should only be used in Text(), MathTex(), Tex() constructors
+        font_size_in_next_to = r'\.next_to\s*\([^)]*,\s*font_size\s*='
+        if re.search(font_size_in_next_to, code):
+            logger.warning("FINAL SAFETY: Removing invalid font_size from next_to() calls")
+            # Remove font_size=X from next_to() calls
+            code = re.sub(r'(\.next_to\s*\([^)]*),\s*font_size\s*=\s*[^,\)]+', r'\1', code)
+        
+        # Pattern 5: font_size in move_to() - Also invalid
+        font_size_in_move_to = r'\.move_to\s*\([^)]*,\s*font_size\s*='
+        if re.search(font_size_in_move_to, code):
+            logger.warning("FINAL SAFETY: Removing invalid font_size from move_to() calls")
+            code = re.sub(r'(\.move_to\s*\([^)]*),\s*font_size\s*=\s*[^,\)]+', r'\1', code)
+        
+        # Pattern 6: font_size in shift() - Also invalid
+        font_size_in_shift = r'\.shift\s*\([^)]*,\s*font_size\s*='
+        if re.search(font_size_in_shift, code):
+            logger.warning("FINAL SAFETY: Removing invalid font_size from shift() calls")
+            code = re.sub(r'(\.shift\s*\([^)]*),\s*font_size\s*=\s*[^,\)]+', r'\1', code)
+        
+        # Pattern 7: font_size in to_edge() - Also invalid
+        font_size_in_to_edge = r'\.to_edge\s*\([^)]*,\s*font_size\s*='
+        if re.search(font_size_in_to_edge, code):
+            logger.warning("FINAL SAFETY: Removing invalid font_size from to_edge() calls")
+            code = re.sub(r'(\.to_edge\s*\([^)]*),\s*font_size\s*=\s*[^,\)]+', r'\1', code)
+        
+        # =====================================================
+        # FIX HALLUCINATED/NON-EXISTENT MANIM CLASSES
+        # =====================================================
+        
+        # Pattern 8: DashedCircle doesn't exist - use DashedVMobject(Circle())
+        if 'DashedCircle' in code:
+            logger.warning("FINAL SAFETY: Replacing DashedCircle with DashedVMobject(Circle())")
+            # Replace DashedCircle(...) with DashedVMobject(Circle(...))
+            code = re.sub(r'DashedCircle\s*\(([^)]*)\)', r'DashedVMobject(Circle(\1))', code)
+        
+        # Pattern 9: TransformReplacement doesn't exist - use ReplacementTransform
+        if 'TransformReplacement' in code:
+            logger.warning("FINAL SAFETY: Replacing TransformReplacement with ReplacementTransform")
+            code = code.replace('TransformReplacement', 'ReplacementTransform')
+        
+        # Pattern 10: DashedLine doesn't exist in some contexts - use DashedVMobject(Line())
+        # Only replace if it causes NameError (DashedLine does exist in manim, but sometimes misused)
+        
+        # Pattern 11: angle= parameter in Arc/Circle - not always valid
+        # Remove angle= from Circle() - it doesn't accept angle parameter
+        if re.search(r'Circle\s*\([^)]*angle\s*=', code):
+            logger.warning("FINAL SAFETY: Removing invalid 'angle' parameter from Circle()")
+            code = re.sub(r'(Circle\s*\([^)]*),\s*angle\s*=\s*[^,\)]+', r'\1', code)
+        
+        # Pattern 12: linestyle parameter doesn't exist in Manim
+        if 'linestyle' in code:
+            logger.warning("FINAL SAFETY: Removing invalid 'linestyle' parameter")
+            code = re.sub(r',\s*linestyle\s*=\s*["\'][^"\']*["\']', '', code)
+            code = re.sub(r',\s*linestyle\s*=\s*\w+', '', code)
+        
+        # Pattern 13: DashedArc doesn't exist - use DashedVMobject(Arc())
+        if 'DashedArc' in code:
+            logger.warning("FINAL SAFETY: Replacing DashedArc with DashedVMobject(Arc())")
+            code = re.sub(r'DashedArc\s*\(([^)]*)\)', r'DashedVMobject(Arc(\1))', code)
+        
+        # Pattern 14: DashedRectangle doesn't exist - use DashedVMobject(Rectangle())
+        if 'DashedRectangle' in code:
+            logger.warning("FINAL SAFETY: Replacing DashedRectangle with DashedVMobject(Rectangle())")
+            code = re.sub(r'DashedRectangle\s*\(([^)]*)\)', r'DashedVMobject(Rectangle(\1))', code)
+        
+        # Pattern 15: AnimationGroup with invalid parameters
+        # AnimationGroup doesn't accept lag_ratio in constructor in some versions
+        
+        # Pattern 16: Spring class doesn't exist - use custom or ParametricFunction
+        if re.search(r'\bSpring\s*\(', code) and 'class Spring' not in code:
+            logger.warning("FINAL SAFETY: Spring class not defined, replacing with Line")
+            code = re.sub(r'Spring\s*\(([^)]*)\)', r'Line(\1)', code)
+        
+        # Pattern 17: Coil class doesn't exist
+        if re.search(r'\bCoil\s*\(', code) and 'class Coil' not in code:
+            logger.warning("FINAL SAFETY: Coil class not defined, replacing with Circle")
+            code = re.sub(r'Coil\s*\(([^)]*)\)', r'Circle(\1)', code)
+        
+        # Pattern 18: DoubleArrow - ensure it's imported/exists (it does exist)
+        # No fix needed, but keep for reference
+        
+        # Pattern 19: TracedPath issues - sometimes misused
+        # TracedPath needs a function that returns a point, not a mobject
+        
+        # Pattern 20: Ensure DashedVMobject is used correctly
+        # If we added DashedVMobject, make sure the inner object is created properly
+        
+        # =====================================================
+        # FIX INVALID ALPHA/OPACITY VALUES (must be 0-1)
+        # =====================================================
+        
+        # Pattern 21: Negative alpha/opacity values - clamp to 0
+        # Alpha values must be between 0 and 1, negative values crash Manim
+        opacity_params = ['fill_opacity', 'stroke_opacity', 'opacity', 'background_stroke_opacity']
+        for param in opacity_params:
+            # Fix negative values -> 0
+            negative_pattern = rf'({param}\s*=\s*)-(\d+\.?\d*)'
+            if re.search(negative_pattern, code):
+                logger.warning(f"FINAL SAFETY: Fixing negative {param} value to 0")
+                code = re.sub(negative_pattern, rf'\g<1>0', code)
+            
+            # Fix values > 1 -> 1
+            def clamp_to_one(match):
+                try:
+                    value = float(match.group(2))
+                    if value > 1:
+                        logger.warning(f"FINAL SAFETY: Clamping {param}={value} to 1")
+                        return f"{match.group(1)}1"
+                except ValueError:
+                    pass
+                return match.group(0)
+            
+            over_one_pattern = rf'({param}\s*=\s*)(\d+\.?\d*)'
+            code = re.sub(over_one_pattern, clamp_to_one, code)
         
         return code
 
