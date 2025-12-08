@@ -422,6 +422,43 @@ PHYSICS VISUALIZATION STANDARDS (MANDATORY COLOR CODING):
    - Surfaces/Grounds = GRAY
 3. CONSISTENT STYLING: Use stroke_width=3 for vectors, stroke_width=2 for shapes.
 
+STRICT MANIM SYNTAX RULES (CRITICAL - VIOLATIONS CAUSE CRASHES):
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+The following patterns DO NOT EXIST in Manim and will crash the renderer:
+
+1. ✗ NEVER use `stroke_style=dashed` or `stroke_style=solid` - This parameter does NOT exist!
+   ✓ CORRECT: Use `DashedLine(start, end)` for dashed lines
+   ✓ CORRECT: Use `DashedVMobject(Line(start, end))` to make any line dashed
+
+2. ✗ NEVER use the bare variable `dashed` - It is NOT defined!
+   ✗ WRONG: `Line(start, end, dashed)` or `style=dashed`
+   ✓ CORRECT: `DashedLine(start, end)` or `DashedVMobject(Line(start, end))`
+
+3. ✗ NEVER use `DashedCircle`, `DashedArc`, `DashedRectangle` - These classes do NOT exist!
+   ✓ CORRECT: `DashedVMobject(Circle(radius=1))`
+   ✓ CORRECT: `DashedVMobject(Arc(radius=1, angle=PI/2))`
+
+4. ✗ NEVER use `TransformReplacement` - Wrong class name!
+   ✓ CORRECT: `ReplacementTransform(old_mobject, new_mobject)`
+
+5. ✗ NEVER use `ShowCreation` - It is deprecated!
+   ✓ CORRECT: `Create(mobject)`
+
+6. ONLY use these VALID rate functions:
+   ✓ Built-in (no import): smooth, linear, rush_into, rush_from, there_and_back
+   ✓ With import from manim.utils.rate_functions: ease_in_sine, ease_out_sine, ease_in_cubic, etc.
+   ✗ INVALID (will crash): linear_with_pause, bounce, elastic, ease_linear
+
+DASHED LINES - THE ONLY CORRECT WAY:
+```python
+# For a simple dashed line:
+dashed_line = DashedLine(start_point, end_point, color=GRAY)
+
+# For dashed version of any shape:
+dashed_circle = DashedVMobject(Circle(radius=2, color=BLUE))
+dashed_arc = DashedVMobject(Arc(radius=1, angle=PI/2))
+```
+
 ADVANCED ANIMATION TECHNIQUES (FOR PROFESSIONAL QUALITY):
 ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
 Smooth Motion (Use rate functions):
@@ -2163,6 +2200,28 @@ REMEMBER: First character = 'f', First line = "from manim import *"
         import logging
         logger = logging.getLogger(__name__)
         
+        # Log entry to confirm this method is being called
+        logger.info("=" * 60)
+        logger.info("FINAL SAFETY CHECK: Scanning for crash-causing patterns...")
+        
+        # Pre-scan to log what patterns we're about to fix
+        detected_patterns = []
+        if 'stroke_style' in code:
+            detected_patterns.append("stroke_style parameter")
+        if re.search(r'[,\(]\s*dashed\s*[,\)]', code) or re.search(r'=\s*dashed\b(?!["\'])', code):
+            detected_patterns.append("bare 'dashed' variable")
+        if 'DashedCircle' in code:
+            detected_patterns.append("DashedCircle class")
+        if 'TransformReplacement' in code:
+            detected_patterns.append("TransformReplacement")
+        if 'linestyle' in code:
+            detected_patterns.append("linestyle parameter")
+        
+        if detected_patterns:
+            logger.warning(f"DETECTED INVALID PATTERNS: {', '.join(detected_patterns)}")
+        else:
+            logger.info("No major invalid patterns detected in pre-scan")
+        
         # Pattern 1: Unguarded nuclear clear - various variable names
         nuclear_clear_patterns = [
             (r'self\.play\s*\(\s*\*\s*\[\s*FadeOut\s*\(\s*mob\s*\)\s*for\s+mob\s+in\s+self\.mobjects\s*\]\s*\)', 'mob'),
@@ -2261,6 +2320,67 @@ REMEMBER: First character = 'f', First line = "from manim import *"
         if 'DashedRectangle' in code:
             logger.warning("FINAL SAFETY: Replacing DashedRectangle with DashedVMobject(Rectangle())")
             code = re.sub(r'DashedRectangle\s*\(([^)]*)\)', r'DashedVMobject(Rectangle(\1))', code)
+        
+        # =====================================================
+        # FIX HALLUCINATED PARAMETERS AND UNDEFINED VARIABLES
+        # These are the #1 cause of NameError crashes!
+        # =====================================================
+        
+        # Pattern 14a: stroke_style=dashed (and variations) - DOES NOT EXIST in Manim
+        # The AI hallucinates this parameter. Remove it entirely.
+        if 'stroke_style' in code:
+            logger.warning("FINAL SAFETY: Removing invalid 'stroke_style' parameter (does not exist in Manim)")
+            # Handle: stroke_style=dashed, stroke_style='dashed', stroke_style="dashed"
+            code = re.sub(r',\s*stroke_style\s*=\s*["\']?dashed["\']?', '', code)
+            code = re.sub(r',\s*stroke_style\s*=\s*["\']?solid["\']?', '', code)
+            code = re.sub(r',\s*stroke_style\s*=\s*["\']?dotted["\']?', '', code)
+            code = re.sub(r',\s*stroke_style\s*=\s*\w+', '', code)
+            logger.info("✓ Removed all stroke_style parameters")
+        
+        # Pattern 14b: Bare 'dashed' variable used as parameter value (undefined)
+        # Example: Line(..., color=GRAY, dashed) or Line(..., style=dashed)
+        # This causes: NameError: name 'dashed' is not defined
+        if re.search(r'[,\(]\s*dashed\s*[,\)]', code) or re.search(r'=\s*dashed\b(?!["\'])', code):
+            logger.warning("FINAL SAFETY: Removing undefined 'dashed' variable references")
+            # Remove bare 'dashed' as positional argument: Line(start, end, dashed) → Line(start, end)
+            code = re.sub(r',\s*dashed\s*(?=[,\)])', '', code)
+            # Remove dashed as keyword value: style=dashed → remove entire kwarg
+            code = re.sub(r',\s*\w+\s*=\s*dashed\b(?!["\'])', '', code)
+            logger.info("✓ Removed all bare 'dashed' variable references")
+        
+        # Pattern 14c: Additional hallucinated rate functions not caught earlier
+        # These slip through the _fix_common_issues checks when original code is used as fallback
+        ADDITIONAL_INVALID_RATE_FUNCS = [
+            'linear_with_pause', 'smooth_in', 'smooth_out', 'bounce', 
+            'elastic', 'back', 'expo', 'quint', 'quart', 'circ',
+            'ease_linear', 'linear_ease', 'smooth_ease', 'ease',
+            'slow_in', 'slow_out', 'fast_in', 'fast_out'
+        ]
+        for invalid_func in ADDITIONAL_INVALID_RATE_FUNCS:
+            if re.search(rf'rate_func\s*=\s*{re.escape(invalid_func)}\b', code):
+                logger.warning(f"FINAL SAFETY: Replacing invalid rate_func '{invalid_func}' with 'smooth'")
+                code = re.sub(rf'rate_func\s*=\s*{re.escape(invalid_func)}\b', 'rate_func=smooth', code)
+        
+        # Pattern 14d: dash_length, dash_spacing on Line (use DashedLine instead)
+        # These params don't exist on Line - just remove them
+        if re.search(r'Line\s*\([^)]*dash_length\s*=', code):
+            logger.warning("FINAL SAFETY: Removing invalid 'dash_length' from Line() - use DashedLine instead")
+            code = re.sub(r'(Line\s*\([^)]*),\s*dash_length\s*=\s*[^,\)]+', r'\1', code)
+        if re.search(r'Line\s*\([^)]*dash_spacing\s*=', code):
+            logger.warning("FINAL SAFETY: Removing invalid 'dash_spacing' from Line()")
+            code = re.sub(r'(Line\s*\([^)]*),\s*dash_spacing\s*=\s*[^,\)]+', r'\1', code)
+        
+        # Pattern 14e: 'dotted' variable (similar to 'dashed')
+        if re.search(r'[,\(]\s*dotted\s*[,\)]', code) or re.search(r'=\s*dotted\b(?!["\'])', code):
+            logger.warning("FINAL SAFETY: Removing undefined 'dotted' variable references")
+            code = re.sub(r',\s*dotted\s*(?=[,\)])', '', code)
+            code = re.sub(r',\s*\w+\s*=\s*dotted\b(?!["\'])', '', code)
+        
+        # Pattern 14f: 'solid' variable (similar to 'dashed')
+        if re.search(r'[,\(]\s*solid\s*[,\)]', code) or re.search(r'=\s*solid\b(?!["\'])', code):
+            logger.warning("FINAL SAFETY: Removing undefined 'solid' variable references")
+            code = re.sub(r',\s*solid\s*(?=[,\)])', '', code)
+            code = re.sub(r',\s*\w+\s*=\s*solid\b(?!["\'])', '', code)
         
         # Pattern 15: AnimationGroup with invalid parameters
         # AnimationGroup doesn't accept lag_ratio in constructor in some versions
